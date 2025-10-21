@@ -11,9 +11,11 @@ This tool analyzes ACC gameplay videos frame-by-frame to extract:
 
 And generates:
 - CSV data files for analysis
+- **Interactive HTML visualizations** with zoom, pan, and hover tooltips
 - High-resolution graphs with multiple detail levels
 - Braking zone analysis
 - Throttle application analysis
+- Multi-lap comparison
 - Lap statistics
 
 ## 🚀 Quick Start
@@ -26,16 +28,36 @@ pip install -r requirements.txt
 
 # 2. Place your gameplay video as input_video.mp4
 
-# 3. Extract telemetry
+# 3. Extract telemetry (generates interactive HTML + CSV)
 python main.py
 
-# 4. Generate detailed analysis
+# 4. Generate detailed static analysis (optional)
 python generate_detailed_analysis.py
+
+# 5. Compare multiple laps (optional)
+python compare_laps.py lap1.csv lap2.csv
 ```
 
 ## 📊 Output Examples
 
-The tool generates **4 types of detailed visualizations** (all at 300 DPI for zooming):
+### Interactive Visualization (NEW!)
+**Browser-based interactive graphs with Plotly** - [See full guide](INTERACTIVE_VISUALIZATION_GUIDE.md)
+
+Features:
+- 🔍 **Interactive zoom**: Click and drag to zoom into any region
+- 🖱️ **Pan navigation**: Explore your lap in detail
+- 📊 **Hover tooltips**: See exact values at any point
+- 📈 **Synchronized views**: All plots zoom together
+- 🏁 **Lap comparison**: Overlay multiple laps to compare performance
+- 💾 **Export controls**: Download as high-res PNG
+- 🌐 **Shareable**: Just send the HTML file - works in any browser
+
+**Output**: `telemetry_interactive_YYYYMMDD_HHMMSS.html` (open in browser)
+
+---
+
+### Detailed Static Analysis
+The tool also generates **4 types of detailed static visualizations** (all at 300 DPI for printing/annotation):
 
 ### 1. Comprehensive Overview
 6-panel layout with:
@@ -68,13 +90,15 @@ Every braking event isolated with:
 ```
 acc-telemetry/
 ├── main.py                          # Main telemetry extraction
-├── generate_detailed_analysis.py    # Generate detailed graphs
+├── compare_laps.py                  # Multi-lap comparison tool
+├── generate_detailed_analysis.py    # Generate detailed static graphs
 ├── config/
 │   └── roi_config.yaml             # ROI coordinates (resolution-specific)
 ├── src/
 │   ├── video_processor.py          # Video frame extraction
 │   ├── telemetry_extractor.py      # Computer vision analysis
-│   ├── visualizer.py               # Basic visualization
+│   ├── interactive_visualizer.py   # Interactive Plotly visualizations
+│   ├── visualizer.py               # Basic matplotlib visualization
 │   └── detailed_visualizer.py      # Detailed multi-scale visualization
 ├── data/
 │   └── output/                     # Generated CSV and PNG files
@@ -101,7 +125,8 @@ If your video resolution differs:
 
 ## 📖 Documentation
 
-- **[DETAILED_ANALYSIS_GUIDE.md](DETAILED_ANALYSIS_GUIDE.md)** - Complete guide to using the detailed visualizations
+- **[INTERACTIVE_VISUALIZATION_GUIDE.md](INTERACTIVE_VISUALIZATION_GUIDE.md)** - How to use interactive HTML graphs and lap comparison ⭐ START HERE
+- **[DETAILED_ANALYSIS_GUIDE.md](DETAILED_ANALYSIS_GUIDE.md)** - Complete guide to using the detailed static visualizations
 - **[PROJECT_SUMMARY.md](docs/PROJECT_SUMMARY.md)** - Technical deep dive
 
 ## 🛠️ Technical Stack
@@ -110,7 +135,8 @@ If your video resolution differs:
 - **OpenCV** - Video processing and computer vision
 - **NumPy** - Array operations
 - **Pandas** - Data handling and CSV export
-- **Matplotlib** - Visualization
+- **Plotly** - Interactive web-based visualizations
+- **Matplotlib** - Static high-resolution graphs
 - **PyYAML** - Configuration
 
 ## 💡 How It Works
@@ -186,11 +212,12 @@ If your video resolution differs:
 - [ ] Resolution-independent ROI scaling
 
 ### Phase 3: Advanced Analysis (Future)
-- [ ] Multi-lap overlay comparison
+- [x] Multi-lap overlay comparison (✅ COMPLETE - see `compare_laps.py`)
+- [x] Interactive zoom/pan visualization (✅ COMPLETE - Plotly integration)
 - [ ] Track map visualization
 - [ ] Sector-by-sector analysis
+- [ ] Time delta analysis
 - [ ] AI-powered driving feedback
-- [ ] Export to MoTeC i2 format
 
 ### Phase 4: Community Platform (Aspirational)
 - [ ] Web UI for video upload
