@@ -136,6 +136,9 @@ class TelemetryExtractor:
         Returns:
             Normalized steering position (-1.0 = full left, 0.0 = center, +1.0 = full right)
         """
+        if roi_image is None or roi_image.size == 0:
+            return 0.0
+            
         # Convert to grayscale
         gray = cv2.cvtColor(roi_image, cv2.COLOR_BGR2GRAY)
         
@@ -148,18 +151,59 @@ class TelemetryExtractor:
         if not contours:
             return 0.0
         
-        # Find the brightest/largest contour (the steering dot)
-        largest_contour = max(contours, key=cv2.contourArea)
+        # Filter contours to find the steering dot
+        # The steering dot should be:
+        # 1. Small to medium size (5-50 pixels) - steering dot is compact
+        # 2. Compact (roughly square, not elongated text)
+        # 3. Located in the bottom half of ROI (scale line is at bottom)
+        height = roi_image.shape[0]
+        width = roi_image.shape[1]
         
-        # Get centroid of the contour
-        M = cv2.moments(largest_contour)
-        if M['m00'] == 0:
+        dot_candidates = []
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            
+            # Filter by area (steering dot is small, text is larger)
+            if not (5 < area < 50):
+                continue
+            
+            # Get bounding box
+            x, y, w, h = cv2.boundingRect(contour)
+            
+            # Filter by aspect ratio (dot should be roughly square, not elongated like text)
+            aspect_ratio = w / h if h > 0 else 0
+            if not (0.5 < aspect_ratio < 2.0):
+                continue
+            
+            # Filter by vertical position (dot is in bottom 2/3 of ROI, text is at top)
+            center_y = y + h // 2
+            if center_y < height * 0.33:
+                continue  # Skip things in top third (text labels)
+            
+            # Calculate centroid
+            M = cv2.moments(contour)
+            if M['m00'] == 0:
+                continue
+            
+            cx = M['m10'] / M['m00']
+            cy = M['m01'] / M['m00']
+            
+            dot_candidates.append({
+                'contour': contour,
+                'cx': cx,
+                'cy': cy,
+                'area': area
+            })
+        
+        if not dot_candidates:
+            # Fallback: if no good candidates, return center position
             return 0.0
         
-        cx = int(M['m10'] / M['m00'])
+        # Select the best candidate (largest area among filtered candidates)
+        best_dot = max(dot_candidates, key=lambda d: d['area'])
+        cx = best_dot['cx']
         
         # Normalize to -1.0 to +1.0 range
-        width = roi_image.shape[1]
         normalized_position = (cx / width) * 2.0 - 1.0
         
         return max(-1.0, min(1.0, normalized_position))
