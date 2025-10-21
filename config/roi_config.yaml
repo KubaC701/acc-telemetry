@@ -9,11 +9,12 @@ throttle:
   height: 14
 
 # Brake - horizontal bar below throttle (red/yellow/orange when ABS active)
+# Height reduced to 11 to avoid capturing Force Feedback indicator below
 brake:
   x: 1170
   y: 687
   width: 103
-  height: 14
+  height: 11
 
 # Steering - white dot on horizontal scale above throttle bar
 steering:
