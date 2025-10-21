@@ -1,0 +1,63 @@
+---
+alwaysApply: true
+---
+
+# ACC Telemetry Extractor - Project Structure
+
+This is a Python computer vision tool that extracts telemetry data (throttle, brake, steering) from Assetto Corsa Competizione gameplay videos by analyzing the on-screen HUD elements.
+
+## Project Architecture
+
+### Entry Point
+[main.py](mdc:main.py) - Main orchestrator that:
+- Loads ROI configuration from [roi_config.yaml](mdc:config/roi_config.yaml)
+- Initializes VideoProcessor, TelemetryExtractor, and TelemetryVisualizer
+- Processes video frame-by-frame
+- Exports CSV and generates visualization graphs
+
+### Core Modules (src/)
+
+1. **[video_processor.py](mdc:src/video_processor.py)** - VideoProcessor class
+   - Opens video files using OpenCV
+   - Extracts ROI (Region of Interest) regions from frames
+   - Yields frame data via generator pattern
+   - Handles video metadata (FPS, frame count, duration)
+
+2. **[telemetry_extractor.py](mdc:src/telemetry_extractor.py)** - TelemetryExtractor class
+   - Computer vision core: analyzes ROI images using HSV color space
+   - `extract_bar_percentage()`: Measures throttle/brake bars (green, yellow, red, orange detection)
+   - `extract_steering_position()`: Finds white dot position on steering indicator
+   - Supports both horizontal and vertical bar orientations
+   - Handles color changes when TC/ABS activate (green→yellow, red→orange)
+
+3. **[visualizer.py](mdc:src/visualizer.py)** - TelemetryVisualizer class
+   - Creates pandas DataFrames from raw telemetry data
+   - Exports CSV files with frame, time, throttle, brake, steering columns
+   - Generates 3-panel matplotlib graphs (throttle, brake, steering over time)
+   - Provides summary statistics
+
+### Configuration
+- **[roi_config.yaml](mdc:config/roi_config.yaml)** - ROI coordinates (x, y, width, height) for:
+  - `throttle`: Horizontal green bar position
+  - `brake`: Horizontal red bar position
+  - `steering`: Steering indicator position
+  - **Important**: Coordinates are resolution-dependent (current: 1280×720)
+
+### Output Directory
+- `data/output/` - Generated files:
+  - `telemetry_YYYYMMDD_HHMMSS.csv` - Raw frame-by-frame data
+  - `telemetry_YYYYMMDD_HHMMSS.png` - Visualization graph
+
+### Input Video
+- Expected location: `input_video.mp4` in project root
+- Can be configured via `VIDEO_PATH` variable in [main.py](mdc:main.py)
+
+## Key Technologies
+- **OpenCV** (cv2): Video processing and computer vision
+- **NumPy**: Array operations and image manipulation
+- **Pandas**: Data structuring and CSV export
+- **Matplotlib**: Telemetry visualization
+- **PyYAML**: Configuration file parsing
+
+## Dependencies
+See [requirements.txt](mdc:requirements.txt) for exact versions

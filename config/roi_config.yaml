@@ -1,0 +1,24 @@
+# ROI coordinates for 1280x720 video
+# Horizontal throttle/brake bars in bottom-right corner
+
+# Throttle - horizontal bar (green/yellow/orange when TC active)
+throttle:
+  x: 1170
+  y: 670
+  width: 103
+  height: 14
+
+# Brake - horizontal bar below throttle (red/yellow/orange when ABS active)
+brake:
+  x: 1170
+  y: 687
+  width: 103
+  height: 14
+
+# Steering - gear indicator area (need to find steering indicator)
+steering:
+  x: 1040
+  y: 645
+  width: 60
+  height: 20
+

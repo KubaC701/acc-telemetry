@@ -1,0 +1,107 @@
+---
+globs: config/*.yaml,config/*.yml
+---
+
+# ROI Configuration Guidelines
+
+The [roi_config.yaml](mdc:config/roi_config.yaml) file defines where to look for telemetry UI elements in the video.
+
+## Configuration Structure
+```yaml
+throttle:
+  x: 1170        # Left edge position (pixels from left)
+  y: 670         # Top edge position (pixels from top)
+  width: 103     # ROI width in pixels
+  height: 14     # ROI height in pixels
+
+brake:
+  x: 1170
+  y: 687
+  width: 103
+  height: 14
+
+steering:
+  x: 1040
+  y: 645
+  width: 60
+  height: 20
+```
+
+## Resolution Dependency
+**Current configuration is for 1280×720 (720p) videos.**
+
+### Scaling for Different Resolutions
+- **1920×1080 (1080p/Full HD)**: Multiply all values by 1.5
+- **2560×1440 (1440p/2K)**: Multiply all values by 2.0
+- **3840×2160 (4K)**: Multiply all values by 3.0
+- **854×480 (480p)**: Multiply all values by 0.67
+
+Example for 1080p:
+```yaml
+throttle:
+  x: 1755      # 1170 × 1.5
+  y: 1005      # 670 × 1.5
+  width: 154   # 103 × 1.5
+  height: 21   # 14 × 1.5
+```
+
+## Finding ROI Coordinates
+If the default coordinates don't work for your video:
+
+1. **Extract a test frame** using the helper script:
+   ```bash
+   python find_throttle_brake_bars.py
+   ```
+
+2. **Open frame in image viewer** that shows pixel coordinates (GIMP, Photoshop, Preview with developer tools)
+
+3. **Locate ACC HUD elements** (usually bottom-right corner):
+   - Throttle bar: Green/yellow horizontal bar
+   - Brake bar: Red/orange horizontal bar below throttle
+   - Steering indicator: White dot or scale above bars
+
+4. **Measure coordinates**:
+   - Note the top-left corner pixel (x, y)
+   - Measure width and height of the element
+   - Add 1-2 pixels margin on each side
+
+5. **Update roi_config.yaml** with new values
+
+6. **Test and iterate** until extraction works correctly
+
+## Validation Checklist
+- ✅ ROI should fully contain the UI element
+- ✅ Small margin (1-3 pixels) on all sides
+- ✅ ROI shouldn't overlap with adjacent UI elements
+- ✅ Width and height should match bar dimensions
+- ✅ Coordinates should be within video dimensions
+
+## Troubleshooting ROI Issues
+
+### Symptom: All values are 0% or 100%
+**Cause**: ROI is not capturing the correct UI element
+
+**Solution**: ROI coordinates are wrong. Re-extract test frame and verify positions.
+
+### Symptom: Values fluctuate wildly
+**Cause**: ROI is too large and capturing neighboring elements
+
+**Solution**: Reduce ROI width/height to isolate the specific bar.
+
+### Symptom: Correct values but occasional spikes
+**Cause**: ROI edges capturing anti-aliasing artifacts or compression artifacts
+
+**Solution**: This is normal. The median-based detection in [telemetry_extractor.py](mdc:src/telemetry_extractor.py) handles this. If persistent, slightly reduce ROI size.
+
+### Symptom: Brake detection shows throttle values (or vice versa)
+**Cause**: Throttle and brake ROI y-coordinates are swapped
+
+**Solution**: Verify which bar is which in your video. Throttle is usually above brake.
+
+## ACC HUD Variations
+Different ACC versions or platforms may have slightly different HUD layouts:
+- **PC version**: May differ from console
+- **PS5 version**: May differ from PS4
+- **Different HUD scale settings**: User can resize HUD in game settings
+
+**Always verify ROI coordinates** with a test frame from YOUR specific video source.

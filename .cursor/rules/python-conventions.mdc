@@ -1,0 +1,47 @@
+---
+globs: *.py
+---
+
+# Python Coding Conventions for ACC Telemetry Extractor
+
+## Code Style
+- Follow PEP 8 conventions
+- Use type hints for function parameters and return values (typing module)
+- Add comprehensive docstrings for all classes and methods (Google style)
+- Keep functions focused and single-purpose
+
+## Naming Conventions
+- Classes: PascalCase (e.g., `TelemetryExtractor`, `VideoProcessor`)
+- Functions/methods: snake_case (e.g., `extract_bar_percentage`, `process_frames`)
+- Constants: UPPER_SNAKE_CASE (e.g., `VIDEO_PATH`, `CONFIG_PATH`)
+- Private methods: prefix with underscore (e.g., `_internal_method`)
+
+## Error Handling
+- Check for None/empty arrays before processing images
+- Validate video file existence before processing
+- Use try-finally blocks for resource cleanup (video capture release)
+- Return sensible defaults (0.0) when detection fails rather than crashing
+
+## Computer Vision Patterns
+- Always convert BGR to HSV for color detection (OpenCV uses BGR by default)
+- Use `cv2.inRange()` for color masking
+- Combine multiple color masks with `cv2.bitwise_or()` for multi-color detection
+- Sample middle portions of ROIs to avoid edge artifacts
+- Use median instead of mean to handle outliers in bar detection
+- Clamp values to valid ranges (0-100 for percentages, -1 to +1 for steering)
+
+## Resource Management
+- Always call `VideoProcessor.close()` to release video capture
+- Use context managers or try-finally for cleanup
+- Create output directories with `mkdir(parents=True, exist_ok=True)`
+
+## Performance Considerations
+- Use generator pattern for frame processing to avoid loading entire video into memory
+- Process frames sequentially (current design optimized for accuracy over speed)
+- Consider progress indicators for long-running operations
+
+## Testing Approach
+- Validate ROI extraction by checking image dimensions
+- Test color detection with sample frames from different lighting conditions
+- Verify telemetry values are within expected ranges (0-100%, -1 to +1)
+- Test with different video resolutions

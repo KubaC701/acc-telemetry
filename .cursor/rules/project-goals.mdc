@@ -1,0 +1,144 @@
+---
+alwaysApply: true
+---
+
+# Project Goals and Vision
+
+## User Background
+The user is a sim racing enthusiast who races Assetto Corsa Competizione (ACC) on **console (PS5)**. They are a self-described "data freak" who loves to compare lap times and analyze driving performance, but console platforms have severe limitations compared to PC:
+
+- **No telemetry export**: PC players can export detailed telemetry data, console players cannot
+- **No third-party tools**: Console ecosystem is closed, preventing use of professional telemetry analysis software
+- **Limited data access**: Only what's visible on-screen during gameplay
+
+## Project Motivation
+This project was born from **necessity and passion**:
+1. **Personal need**: Fill the telemetry gap for console sim racers
+2. **Learning opportunity**: Explore computer vision and Python as a beginner backend/Python developer
+3. **Data analysis**: Enable lap comparison and driving improvement through data
+4. **Fun side project**: Combine racing hobby with coding skills
+
+## Core Problem Statement
+> "How can I extract telemetry data (throttle, brake, steering) from console ACC gameplay videos when the platform doesn't allow direct data export?"
+
+**Solution**: Use computer vision to "watch" the on-screen HUD and automatically record telemetry values frame-by-frame.
+
+## Target Use Cases
+
+### Primary: Personal Lap Analysis
+- Record gameplay footage from console
+- Extract telemetry from video
+- Compare multiple laps to find improvements
+- Identify braking points, throttle application, steering smoothness
+- Analyze corner entry/apex/exit techniques
+
+### Future: Community Tool
+- Share with other console sim racers facing same limitations
+- Compare driving styles between different drivers
+- Learn from faster drivers by analyzing their YouTube videos
+- Build a library of telemetry from various tracks and cars
+
+## User's Technical Background
+- **Strong in**: JavaScript, TypeScript, Node.js, web technologies
+- **Beginner in**: Python, backend development, computer vision
+- **Learning goals**: Practical Python experience, OpenCV, data analysis
+
+**Design philosophy**: Code should be well-documented and educational for someone learning Python. Prefer clarity over cleverness.
+
+## Success Criteria
+The project is successful if:
+1. ✅ **Accurately extracts** throttle, brake, steering from console gameplay videos
+2. ✅ **Produces usable data** in standard formats (CSV for analysis, graphs for visualization)
+3. ✅ **Works reliably** across different videos from the same setup
+4. 🔄 **Easy to configure** for different video resolutions or HUD layouts
+5. 🔄 **Extensible** for future features (lap times, gear detection, track mapping)
+
+## Long-Term Vision
+
+### Phase 1: Core Extraction ✅ COMPLETE
+- Basic throttle/brake/steering extraction
+- CSV export and visualization
+- Resolution-specific ROI configuration
+
+### Phase 2: Enhanced Features 🎯 PLANNED
+- **Automatic ROI detection**: No manual configuration needed
+- **Lap time detection**: OCR to read lap times from HUD
+- **Gear detection**: Extract current gear from display
+- **Multiple video support**: Batch process multiple laps
+- **Resolution independence**: Auto-scale for any video resolution
+
+### Phase 3: Advanced Analysis 🚀 FUTURE
+- **Lap comparison tool**: Overlay telemetry from multiple laps
+- **Track map overlay**: Visualize telemetry on track layout
+- **Sector analysis**: Break down performance by track sections
+- **Driving score**: AI-powered feedback on driving technique
+- **Export to professional formats**: MoTeC i2, RaceStudio compatibility
+
+### Phase 4: Community Platform 💡 ASPIRATIONAL
+- **Web UI**: Upload videos directly in browser
+- **Cloud processing**: No local setup required
+- **Shared telemetry database**: Community-driven lap library
+- **Driver comparison**: Compare yourself to top drivers
+- **YouTube integration**: Analyze any ACC video automatically
+
+## Design Principles
+
+### 1. Accessibility
+This tool should be usable by sim racers who aren't programmers:
+- Clear installation instructions
+- Minimal configuration required
+- Helpful error messages
+- Example videos and outputs
+
+### 2. Accuracy Over Speed
+It's acceptable to process slowly if results are accurate:
+- Console players record footage, then process later (not real-time)
+- Better to take 5 minutes for perfect data than 30 seconds for noisy data
+- Use robust algorithms (median filtering, multi-color detection)
+
+### 3. Extensibility
+Design with future enhancements in mind:
+- Modular architecture (separate video processing, extraction, visualization)
+- Configuration-driven (YAML for easy tweaks)
+- Well-documented code for contributions
+
+### 4. Educational Value
+The user is learning Python through this project:
+- Comprehensive docstrings explaining what code does
+- Comments on complex computer vision logic
+- Documentation that teaches concepts (HSV color space, ROI extraction, etc.)
+
+## Inspiration and Similar Tools
+The user wants features similar to professional PC-based telemetry tools:
+- **MoTeC i2**: Industry-standard telemetry analysis (used in real racing)
+- **Assetto Corsa Telemetry**: PC mod that exports detailed data
+- **RaceStudio**: Data logging and analysis platform
+
+But adapted for the console constraint: **if you can see it on screen, we can extract it**.
+
+## Real-World Impact
+This isn't just a toy project—it solves a genuine problem:
+- Console sim racing community is large (PS5/Xbox players)
+- No other tools exist for this specific use case
+- Could genuinely help players improve their driving
+- Demonstrates practical application of computer vision
+
+## Key Technical Challenges Overcome
+1. ✅ Resolution dependency (solved: configurable ROI)
+2. ✅ Color changes during TC/ABS activation (solved: multi-color detection)
+3. ✅ Horizontal vs. vertical bar detection (solved: orientation parameter)
+4. ✅ Finding correct UI elements (solved: manual calibration + helper scripts)
+
+## Measuring Success
+The user will know this project succeeds when they can:
+1. Record a lap on console
+2. Transfer video to computer
+3. Run `python main.py`
+4. Get accurate telemetry CSV and graph
+5. **Actually improve lap times** by analyzing the data
+
+This project is about **using technology to enhance a hobby**, combining the joy of racing with the satisfaction of coding.
+
+---
+
+*Remember: This is a passion project. The user wants it to work well AND wants to learn from building it. Balance pragmatism with educational value.*

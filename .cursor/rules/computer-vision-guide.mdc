@@ -1,0 +1,105 @@
+---
+description: Guidelines for computer vision and OpenCV usage in telemetry extraction
+---
+
+# Computer Vision Guidelines for ACC Telemetry Extraction
+
+## Color Space Conversion
+This project uses HSV (Hue, Saturation, Value) color space instead of BGR for better color detection:
+
+```python
+hsv = cv2.cvtColor(roi_image, cv2.COLOR_BGR2HSV)
+```
+
+### Why HSV?
+- Separates color (hue) from brightness (value)
+- More robust to lighting variations
+- Easier to define color ranges (e.g., "all greens" = H: 35-85)
+
+### HSV Ranges in Use
+See [telemetry_extractor.py](mdc:src/telemetry_extractor.py) for current values:
+
+- **Green (throttle)**: H: 35-85, S: 50-255, V: 50-255
+- **Yellow (TC active)**: H: 15-35, S: 100-255, V: 100-255
+- **Red (brake)**: H: 0-10 OR 170-180, S: 100-255, V: 100-255
+- **Orange (ABS active)**: H: 10-40, S: 100-255, V: 100-255
+- **White/Gray (steering)**: H: any, S: 0-50, V: 100-255
+
+## ROI (Region of Interest) Extraction
+ROI coordinates define where to look on screen:
+
+```python
+roi = frame[y:y+height, x:x+width]
+```
+
+- **Coordinate system**: (0,0) is top-left corner
+- **Units**: Pixels
+- **Resolution dependency**: ROI coords must be adjusted for different video resolutions
+- **Best practice**: Keep ROI tight around UI element with small margin
+
+## Bar Percentage Detection Strategy
+
+### Horizontal Bars (Current Implementation)
+1. Convert ROI to HSV
+2. Create color mask(s) for bar colors
+3. Sample middle rows (avoid edge artifacts)
+4. Find rightmost filled pixel in each row
+5. Calculate median filled width
+6. Convert to percentage: `(filled_width / total_width) * 100`
+
+### Vertical Bars (Alternative)
+1. Sample middle columns
+2. Find topmost filled pixel (bars fill from bottom)
+3. Calculate filled height from bottom
+4. Use median to handle outliers
+
+### Multi-Color Detection Pattern
+Bars change color during TC/ABS activation. Handle by combining masks:
+
+```python
+mask_green = cv2.inRange(hsv, lower_green, upper_green)
+mask_yellow = cv2.inRange(hsv, lower_yellow, upper_yellow)
+combined_mask = cv2.bitwise_or(mask_green, mask_yellow)
+```
+
+## Steering Detection
+Uses brightness thresholding to find white indicator dot:
+
+1. Convert to grayscale
+2. Threshold at high value (200) to isolate bright pixels
+3. Find contours
+4. Get largest contour (the steering dot)
+5. Calculate centroid position
+6. Normalize to -1.0 (left) to +1.0 (right)
+
+## Common Pitfalls
+
+### Red Color Detection
+Red wraps around in HSV (0° and 180° are both red). Must detect in two ranges:
+- Lower red: H: 0-10
+- Upper red: H: 170-180
+
+### Edge Artifacts
+ROI edges may have anti-aliasing or compression artifacts. Always sample middle portions:
+```python
+middle_rows = mask[height//3:2*height//3, :]
+```
+
+### Outlier Handling
+Use median instead of mean for robustness:
+```python
+filled_width = np.median(filled_widths)
+```
+
+## Debugging Tips
+1. Save intermediate images (ROI crops, masks) for visual inspection
+2. Print min/max color values in ROI to tune HSV ranges
+3. Test with frames where TC/ABS are active vs. inactive
+4. Verify ROI coordinates by overlaying rectangles on original frame
+5. Check that masks have expected white regions (use cv2.imshow in debug mode)
+
+## Future Enhancements
+- Template matching for automatic ROI detection
+- Adaptive thresholding for varying lighting conditions
+- OCR integration for reading lap times and gear numbers
+- Multi-resolution support with automatic scaling
