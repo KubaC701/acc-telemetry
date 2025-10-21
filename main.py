@@ -7,7 +7,7 @@ import yaml
 from pathlib import Path
 from src.video_processor import VideoProcessor
 from src.telemetry_extractor import TelemetryExtractor
-from src.visualizer import TelemetryVisualizer
+from src.interactive_visualizer import InteractiveTelemetryVisualizer
 
 
 def load_config(config_path: str = 'config/roi_config.yaml'):
@@ -42,7 +42,7 @@ def main():
     print(f"🎥 Opening video: {VIDEO_PATH}")
     processor = VideoProcessor(VIDEO_PATH, roi_config)
     extractor = TelemetryExtractor()
-    visualizer = TelemetryVisualizer()
+    visualizer = InteractiveTelemetryVisualizer()
     
     if not processor.open_video():
         print("❌ Error: Could not open video file")
@@ -95,9 +95,10 @@ def main():
     csv_path = visualizer.export_csv(df)
     print(f"   ✅ CSV saved: {csv_path}")
     
-    # Generate graph
+    # Generate interactive HTML graph
     graph_path = visualizer.plot_telemetry(df)
-    print(f"   ✅ Graph saved: {graph_path}")
+    print(f"   ✅ Interactive graph saved: {graph_path}")
+    print(f"      💡 Open this HTML file in your browser for interactive zoom/pan/hover!")
     
     # Display summary
     summary = visualizer.generate_summary(df)
