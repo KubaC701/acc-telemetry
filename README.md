@@ -1,140 +1,228 @@
-# ACC Telemetry Extractor
+# ACC Telemetry Extractor (Console Edition)
 
-Extract throttle, brake, and steering telemetry from Assetto Corsa Competizione gameplay videos using computer vision.
+Extract detailed telemetry data from Assetto Corsa Competizione gameplay videos using computer vision. Designed for **console players (PS5/Xbox)** who can't access native telemetry export.
 
-## Features
+## 🎯 What It Does
 
-- 🎥 Video processing at 60 FPS
-- 🔍 Computer vision-based telemetry extraction
-- 📊 Beautiful time-series graphs
-- 📁 CSV export for further analysis
-- ⚙️ Configurable ROI coordinates
+This tool analyzes ACC gameplay videos frame-by-frame to extract:
+- **Throttle input** (0-100%)
+- **Brake input** (0-100%)
+- **Steering input** (-1.0 to +1.0)
 
-## Requirements
+And generates:
+- CSV data files for analysis
+- High-resolution graphs with multiple detail levels
+- Braking zone analysis
+- Throttle application analysis
+- Lap statistics
 
-- Python 3.8+
-- OpenCV
-- NumPy, Pandas, Matplotlib
+## 🚀 Quick Start
 
-## Installation
-
-1. Clone or download this repository
-
-2. Install dependencies:
 ```bash
+# 1. Set up Python environment
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
-```
 
-## Usage
+# 2. Place your gameplay video as input_video.mp4
 
-1. **Place your ACC gameplay video** in the project root directory and name it `input_video.mp4`
-   - Or edit the `VIDEO_PATH` variable in `main.py` to point to your video
-
-2. **Run the extractor**:
-```bash
+# 3. Extract telemetry
 python main.py
+
+# 4. Generate detailed analysis
+python generate_detailed_analysis.py
 ```
 
-3. **Check the outputs** in `data/output/`:
-   - `telemetry_TIMESTAMP.csv` - Raw telemetry data
-   - `telemetry_TIMESTAMP.png` - Visualization graph
+## 📊 Output Examples
 
-## ROI Configuration
+The tool generates **4 types of detailed visualizations** (all at 300 DPI for zooming):
 
-The extractor uses Region of Interest (ROI) coordinates to locate the telemetry UI elements in your video.
+### 1. Comprehensive Overview
+6-panel layout with:
+- Complete lap overview
+- Throttle detail with reference lines
+- Brake detail with statistics
+- Steering detail (color-coded)
+- Pedal overlay (shows when both pedals are pressed)
+- Complete lap statistics
 
-Default configuration is in `config/roi_config.yaml` for 1920x1080 videos:
+![Example Overview](docs/example_overview.png)
 
-```yaml
-throttle:
-  x: 1650      # Left edge position
-  y: 1020      # Top edge position
-  width: 200   # ROI width
-  height: 25   # ROI height
+### 2. Zoomed Sections
+Your lap divided into sections (default: 6) for detailed analysis of specific areas.
 
-brake:
-  x: 1650
-  y: 1050
-  width: 200
-  height: 25
+### 3. Braking Zones Analysis
+Every braking event isolated with:
+- Context before/after
+- Duration, max brake, average brake
+- Steering overlay to see trail braking
 
-steering:
-  x: 1650
-  y: 990
-  width: 200
-  height: 15
+### 4. Throttle Application Analysis
+3-panel analysis showing:
+- Throttle with color gradient (rate of change)
+- Throttle vs steering correlation
+- Throttle application rate (smoothness)
+
+## 📁 Project Structure
+
+```
+acc-telemetry/
+├── main.py                          # Main telemetry extraction
+├── generate_detailed_analysis.py    # Generate detailed graphs
+├── config/
+│   └── roi_config.yaml             # ROI coordinates (resolution-specific)
+├── src/
+│   ├── video_processor.py          # Video frame extraction
+│   ├── telemetry_extractor.py      # Computer vision analysis
+│   ├── visualizer.py               # Basic visualization
+│   └── detailed_visualizer.py      # Detailed multi-scale visualization
+├── data/
+│   └── output/                     # Generated CSV and PNG files
+└── docs/
+    ├── DETAILED_ANALYSIS_GUIDE.md  # Complete guide to using the visualizations
+    └── PROJECT_SUMMARY.md          # Technical overview
 ```
 
-### Adjusting ROI Coordinates
+## 🎮 Supported Setup
 
-If the extractor doesn't work correctly with your video:
+Currently configured for:
+- **Game**: Assetto Corsa Competizione (Console)
+- **Resolution**: 1280×720 (720p)
+- **HUD**: Default ACC HUD with visible throttle/brake bars
 
-1. Open your video in a video player or image viewer
-2. Note the pixel coordinates of:
-   - Throttle bar (green bar in bottom-right)
-   - Brake bar (gray bar in bottom-right)
-   - Steering indicator (white dot above the bars)
-3. Update the coordinates in `config/roi_config.yaml`
-4. Re-run `main.py`
+**Other resolutions?** You'll need to recalibrate ROI coordinates using the helper scripts (see docs).
 
-**Tips:**
-- The ROI should fully contain the UI element with a small margin
-- Different video resolutions require different coordinates
-- For 4K videos, multiply the default values by 2
-- For 720p videos, multiply the default values by 0.67
+## 🔧 Calibration Helper Scripts
 
-## Output Format
+If your video resolution differs:
+- `find_throttle_brake_bars.py` - Find ROI coordinates for your resolution
+- `visualize_rois.py` - Verify ROI placement
+- `debug_braking.py` - Debug brake detection issues
 
-### CSV Columns:
-- `frame` - Frame number
-- `time` - Timestamp in seconds
-- `throttle` - Throttle percentage (0-100)
-- `brake` - Brake percentage (0-100)
-- `steering` - Steering position (-1.0 to +1.0, where -1=full left, 0=center, +1=full right)
+## 📖 Documentation
 
-### Graph:
-Three stacked plots showing:
-1. Throttle over time (green)
-2. Brake over time (red)
-3. Steering over time (blue)
+- **[DETAILED_ANALYSIS_GUIDE.md](DETAILED_ANALYSIS_GUIDE.md)** - Complete guide to using the detailed visualizations
+- **[PROJECT_SUMMARY.md](docs/PROJECT_SUMMARY.md)** - Technical deep dive
 
-## Troubleshooting
+## 🛠️ Technical Stack
 
-**"Video file not found"**
-- Ensure your video is at `./input_video.mp4` or update `VIDEO_PATH` in `main.py`
+- **Python 3.10+**
+- **OpenCV** - Video processing and computer vision
+- **NumPy** - Array operations
+- **Pandas** - Data handling and CSV export
+- **Matplotlib** - Visualization
+- **PyYAML** - Configuration
 
-**Incorrect telemetry values (all zeros or wrong percentages)**
-- Your ROI coordinates need adjustment
-- Open a frame from your video and identify the correct pixel coordinates
-- Update `config/roi_config.yaml`
+## 💡 How It Works
 
-**Video takes too long to process**
-- This is normal for long videos (a 10-minute video may take 2-5 minutes)
-- Future optimization: reduce sampling rate in `video_processor.py`
+1. **Video Processing**: Extract frames from gameplay video
+2. **ROI Extraction**: Crop specific regions (throttle bar, brake bar, steering indicator)
+3. **Color Detection**: Use HSV color space to detect:
+   - Green/yellow pixels (throttle - changes with TC activation)
+   - Red/orange pixels (brake - changes with ABS activation)
+   - White pixels (steering indicator dot)
+4. **Measurement**: Calculate percentage of bar filled or position of indicator
+5. **Export**: Generate CSV data and high-resolution visualizations
 
-**"Could not open video file"**
-- Ensure OpenCV supports your video codec
-- Try re-encoding with: `ffmpeg -i input.mp4 -c:v libx264 input_video.mp4`
+## 🎯 Use Cases
 
-## Future Enhancements
+### Personal Improvement
+- Compare your laps to find where you're losing time
+- Analyze braking points consistency
+- Study throttle application technique
+- Identify problem corners
 
-- [ ] Web UI for drag-drop video upload
-- [ ] Interactive ROI calibration tool
-- [ ] Template matching for auto-detection
-- [ ] Multiple video comparison
+### Lap Comparison
+- Record multiple laps and compare side-by-side
+- Track improvement over practice sessions
+- Find which corners have the most variation
+
+### Learn from Others
+- Download fast laps from YouTube
+- Extract their telemetry
+- Compare your technique to theirs
+- Identify specific differences in inputs
+
+## 🔬 Key Features
+
+### Multi-Color Detection
+- Handles TC/ABS activation color changes
+- Throttle: Green → Yellow when TC active
+- Brake: Red → Orange when ABS active
+
+### High-Resolution Output
+- 300 DPI graphs for detailed analysis
+- Suitable for printing and annotation
+- Frame-by-frame accuracy
+
+### Comprehensive Statistics
+- Lap duration and frame count
+- Average and max values for all inputs
+- Full throttle percentage and time
+- Braking event count and duration
+- Steering angle statistics
+
+### Intelligent Analysis
+- Automatic braking zone detection
+- Context frames before/after events
+- Trail braking identification
+- Throttle smoothness analysis
+- Pedal overlap detection (both pedals pressed)
+
+## 🐛 Known Limitations
+
+1. **Resolution-dependent**: ROI coordinates need recalibration for different video resolutions
+2. **HUD-dependent**: Requires default ACC HUD to be visible
+3. **Console-focused**: Designed for console gameplay footage (PC players have native telemetry export)
+4. **Post-processing only**: Not real-time (but console players record first, analyze later anyway)
+
+## 🚧 Roadmap
+
+### Phase 2: Enhanced Features (Planned)
+- [ ] Automatic ROI detection (no manual calibration needed)
+- [ ] Lap time extraction using OCR
+- [ ] Gear detection
+- [ ] Batch processing multiple videos
+- [ ] Resolution-independent ROI scaling
+
+### Phase 3: Advanced Analysis (Future)
+- [ ] Multi-lap overlay comparison
+- [ ] Track map visualization
+- [ ] Sector-by-sector analysis
+- [ ] AI-powered driving feedback
 - [ ] Export to MoTeC i2 format
-- [ ] Lap time detection and split analysis
-- [ ] Track map overlay
 
-## License
+### Phase 4: Community Platform (Aspirational)
+- [ ] Web UI for video upload
+- [ ] Cloud processing
+- [ ] Shared telemetry database
+- [ ] YouTube integration
 
-MIT License - Feel free to use and modify!
+## 🤝 Contributing
 
-## Contributing
+This is a learning project, but contributions are welcome! Areas where help would be appreciated:
+- Support for more video resolutions
+- Automatic ROI detection algorithms
+- OCR integration for lap times
+- Additional visualization types
+- Performance optimization
 
-Found a bug or have a feature request? Open an issue!
+## 📄 License
+
+MIT License - Feel free to use, modify, and share!
+
+## 🙏 Acknowledgments
+
+Built by a console sim racer frustrated by the lack of telemetry tools. Inspired by professional telemetry software like MoTeC i2 and RaceStudio, but adapted for the constraint of console gaming: **if you can see it on screen, we can extract it**.
+
+## 📬 Questions?
+
+Check the documentation:
+- **User guide**: [DETAILED_ANALYSIS_GUIDE.md](DETAILED_ANALYSIS_GUIDE.md)
+- **Technical details**: [docs/PROJECT_SUMMARY.md](docs/PROJECT_SUMMARY.md)
 
 ---
 
-**Note:** This tool is designed for personal use to analyze your own gameplay footage. Respect copyright when analyzing videos from other sources.
+**Happy racing! 🏁**
 
+*Remember: The fastest drivers aren't necessarily the most talented - they're the ones who analyze and improve systematically.*

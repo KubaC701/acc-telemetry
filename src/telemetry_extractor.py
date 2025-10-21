@@ -111,7 +111,8 @@ class TelemetryExtractor:
             # Check if enough pixels detected to be real bar vs noise
             # For horizontal bars, we need substantial pixel count
             total_detected_pixels = np.count_nonzero(mask)
-            min_pixels_threshold = 50  # Minimum pixels to consider valid detection
+            min_pixels_threshold = 150  # Minimum pixels to consider valid detection
+                                        # Raised from 50 to 150 to filter out false throttle blips
             
             if total_detected_pixels < min_pixels_threshold:
                 # Too few pixels - likely noise/text artifacts, not actual bar
