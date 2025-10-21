@@ -17,9 +17,10 @@ brake:
   height: 11
 
 # Steering - white dot on horizontal scale above throttle bar
+# Extended to frame edge to capture rightmost tick marks (x=1110 to x=1280)
 steering:
-  x: 1171
-  y: 640
-  width: 69
-  height: 30
+  x: 1135
+  y: 662
+  width: 134
+  height: 9
 
