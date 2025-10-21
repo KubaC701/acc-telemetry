@@ -15,10 +15,10 @@ brake:
   width: 103
   height: 14
 
-# Steering - gear indicator area (need to find steering indicator)
+# Steering - white dot on horizontal scale above throttle bar
 steering:
-  x: 1040
-  y: 645
-  width: 60
-  height: 20
+  x: 1171
+  y: 640
+  width: 69
+  height: 30
 

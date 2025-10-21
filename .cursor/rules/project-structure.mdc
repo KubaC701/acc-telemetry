@@ -48,6 +48,25 @@ This is a Python computer vision tool that extracts telemetry data (throttle, br
   - `telemetry_YYYYMMDD_HHMMSS.csv` - Raw frame-by-frame data
   - `telemetry_YYYYMMDD_HHMMSS.png` - Visualization graph
 
+### Debug Directory
+- `debug/` - Temporary debugging workspace (git-ignored)
+  - **Purpose**: Store temporary files, test images, debug scripts during development
+  - **Workflow**: 
+    1. Agent creates task-specific subfolder (e.g., `debug/roi_calibration/`, `debug/color_analysis/`)
+    2. Store temporary debug artifacts (frame captures, test outputs, analysis scripts)
+    3. After task completion, the task-specific subfolder can be safely deleted
+  - **Example structure**:
+    ```
+    debug/
+      ├── roi_calibration/        # Temporary: ROI finding task
+      │   ├── frame_samples/
+      │   └── test_coordinates.yaml
+      ├── color_detection_test/   # Temporary: Color threshold tuning
+      │   ├── hsv_ranges.png
+      │   └── mask_test.py
+    ```
+  - **Important**: Contents are temporary and should not be committed to version control
+
 ### Input Video
 - Expected location: `input_video.mp4` in project root
 - Can be configured via `VIDEO_PATH` variable in [main.py](mdc:main.py)
