@@ -180,6 +180,47 @@ class InteractiveTelemetryVisualizer:
             row=3, col=1
         )
         
+        # ===== LAP VISUALIZATION FEATURES =====
+        # Add vertical lap separators if lap_number column exists
+        if 'lap_number' in df.columns:
+            valid_laps_df = df[df['lap_number'].notna()]
+            
+            if not valid_laps_df.empty:
+                # Find lap transition points (where lap number changes)
+                lap_transitions = valid_laps_df[
+                    valid_laps_df['lap_number'] != valid_laps_df['lap_number'].shift()
+                ]
+                
+                # Add vertical lines and annotations at transitions
+                for idx, row in lap_transitions.iterrows():
+                    transition_time = row['time']
+                    lap_num = int(row['lap_number'])
+                    
+                    # Add vertical line on all three subplots
+                    for subplot_row in [1, 2, 3]:
+                        fig.add_vline(
+                            x=transition_time,
+                            line_dash="dash",
+                            line_color="rgba(128, 128, 128, 0.5)",
+                            line_width=1,
+                            row=subplot_row, col=1
+                        )
+                    
+                    # Add lap annotation on top plot
+                    fig.add_annotation(
+                        x=transition_time,
+                        y=100,
+                        text=f"Lap {lap_num}",
+                        showarrow=False,
+                        font=dict(size=10, color='#34495E'),
+                        bgcolor='rgba(255, 255, 255, 0.7)',
+                        bordercolor='rgba(128, 128, 128, 0.3)',
+                        borderwidth=1,
+                        borderpad=3,
+                        row=1, col=1,
+                        yref='y1'
+                    )
+        
         # ===== LAYOUT CONFIGURATION =====
         fig.update_layout(
             title={
@@ -342,9 +383,9 @@ class InteractiveTelemetryVisualizer:
             df: DataFrame with telemetry data
             
         Returns:
-            Dictionary with summary statistics
+            Dictionary with summary statistics including per-lap data if available
         """
-        return {
+        summary = {
             'duration': df['time'].iloc[-1] - df['time'].iloc[0],
             'total_frames': len(df),
             'avg_throttle': df['throttle'].mean(),
@@ -355,4 +396,183 @@ class InteractiveTelemetryVisualizer:
             'max_steering_left': df['steering'].min(),
             'max_steering_right': df['steering'].max()
         }
+        
+        # Add lap-based statistics if lap_number column exists
+        if 'lap_number' in df.columns:
+            # Filter out None/NaN lap numbers
+            valid_laps_df = df[df['lap_number'].notna()]
+            
+            if not valid_laps_df.empty:
+                summary['total_laps'] = int(valid_laps_df['lap_number'].nunique())
+                summary['laps'] = []
+                
+                # Generate per-lap statistics
+                for lap_num in sorted(valid_laps_df['lap_number'].unique()):
+                    lap_df = valid_laps_df[valid_laps_df['lap_number'] == lap_num]
+                    
+                    if not lap_df.empty:
+                        lap_duration = lap_df['time'].iloc[-1] - lap_df['time'].iloc[0]
+                        
+                        summary['laps'].append({
+                            'lap_number': int(lap_num),
+                            'duration': lap_duration,
+                            'frames': len(lap_df),
+                            'avg_throttle': lap_df['throttle'].mean(),
+                            'avg_brake': lap_df['brake'].mean(),
+                            'max_throttle': lap_df['throttle'].max(),
+                            'max_brake': lap_df['brake'].max(),
+                            'avg_steering_abs': lap_df['steering'].abs().mean()
+                        })
+            else:
+                summary['total_laps'] = 0
+                summary['laps'] = []
+        else:
+            summary['total_laps'] = 0
+            summary['laps'] = []
+        
+        return summary
+    
+    def plot_lap_comparison(self, df: pd.DataFrame, lap_numbers: List[int],
+                           filename: Optional[str] = None) -> str:
+        """
+        Create an interactive comparison graph overlaying multiple laps.
+        Each lap is normalized to start at time=0 for direct comparison.
+        
+        Args:
+            df: DataFrame with telemetry data including lap_number column
+            lap_numbers: List of lap numbers to compare (e.g., [22, 23, 24])
+            filename: Optional custom filename
+            
+        Returns:
+            Path to saved HTML file
+        """
+        if 'lap_number' not in df.columns:
+            raise ValueError("DataFrame must contain 'lap_number' column for lap comparison")
+        
+        if filename is None:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            laps_str = '_'.join(map(str, lap_numbers))
+            filename = f'telemetry_lap_comparison_{laps_str}_{timestamp}.html'
+        
+        if not filename.endswith('.html'):
+            filename = filename.replace('.png', '.html')
+        
+        filepath = self.output_dir / filename
+        
+        # Color palette for different laps
+        colors = ['#00FF00', '#FF6B6B', '#4ECDC4', '#FFD93D', '#6C5CE7', '#FD79A8']
+        
+        # Create figure with 3 subplots
+        fig = make_subplots(
+            rows=3, cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.08,
+            subplot_titles=('Throttle Comparison', 'Brake Comparison', 'Steering Comparison'),
+            row_heights=[0.33, 0.33, 0.34]
+        )
+        
+        # Process each lap
+        for idx, lap_num in enumerate(lap_numbers):
+            # Filter data for this lap
+            lap_df = df[df['lap_number'] == lap_num].copy()
+            
+            if lap_df.empty:
+                print(f"Warning: No data found for lap {lap_num}")
+                continue
+            
+            # Normalize time to start at 0 for this lap
+            lap_start_time = lap_df['time'].iloc[0]
+            lap_df['normalized_time'] = lap_df['time'] - lap_start_time
+            
+            # Get lap time if available
+            lap_time = lap_df['lap_time'].iloc[0] if 'lap_time' in lap_df.columns else None
+            lap_duration = lap_df['normalized_time'].iloc[-1]
+            
+            # Create label with lap time
+            if lap_time:
+                label = f"Lap {lap_num} ({lap_time})"
+            else:
+                label = f"Lap {lap_num} ({lap_duration:.2f}s)"
+            
+            color = colors[idx % len(colors)]
+            
+            # Throttle trace
+            fig.add_trace(
+                go.Scatter(
+                    x=lap_df['normalized_time'],
+                    y=lap_df['throttle'],
+                    mode='lines',
+                    name=label,
+                    line=dict(color=color, width=2),
+                    legendgroup=f'lap{lap_num}',
+                    showlegend=True,
+                    hovertemplate=f'<b>{label}</b><br>Time: %{{x:.2f}}s<br>Throttle: %{{y:.1f}}%<extra></extra>'
+                ),
+                row=1, col=1
+            )
+            
+            # Brake trace
+            fig.add_trace(
+                go.Scatter(
+                    x=lap_df['normalized_time'],
+                    y=lap_df['brake'],
+                    mode='lines',
+                    name=label,
+                    line=dict(color=color, width=2),
+                    legendgroup=f'lap{lap_num}',
+                    showlegend=False,
+                    hovertemplate=f'<b>{label}</b><br>Time: %{{x:.2f}}s<br>Brake: %{{y:.1f}}%<extra></extra>'
+                ),
+                row=2, col=1
+            )
+            
+            # Steering trace
+            fig.add_trace(
+                go.Scatter(
+                    x=lap_df['normalized_time'],
+                    y=lap_df['steering'],
+                    mode='lines',
+                    name=label,
+                    line=dict(color=color, width=2),
+                    legendgroup=f'lap{lap_num}',
+                    showlegend=False,
+                    hovertemplate=f'<b>{label}</b><br>Time: %{{x:.2f}}s<br>Steering: %{{y:.3f}}<extra></extra>'
+                ),
+                row=3, col=1
+            )
+        
+        # Add center line for steering
+        fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5, row=3, col=1)
+        
+        # Update axes
+        fig.update_yaxes(title_text="Throttle (%)", range=[-5, 105], row=1, col=1)
+        fig.update_yaxes(title_text="Brake (%)", range=[-5, 105], row=2, col=1)
+        fig.update_yaxes(title_text="Steering", range=[-1.1, 1.1], row=3, col=1)
+        fig.update_xaxes(title_text="Lap Time (seconds)", row=3, col=1)
+        
+        # Layout
+        fig.update_layout(
+            title={
+                'text': f'Lap Comparison: Laps {", ".join(map(str, lap_numbers))}',
+                'x': 0.5,
+                'xanchor': 'center',
+                'font': {'size': 20, 'family': 'Arial, sans-serif'}
+            },
+            height=900,
+            showlegend=True,
+            legend=dict(
+                orientation="v",
+                yanchor="top",
+                y=0.99,
+                xanchor="right",
+                x=0.99
+            ),
+            hovermode='x unified',
+            template='plotly_white',
+            xaxis3=dict(rangeslider=dict(visible=True, thickness=0.05))
+        )
+        
+        fig.write_html(filepath)
+        
+        return str(filepath)
 

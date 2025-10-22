@@ -23,6 +23,7 @@ class VideoProcessor:
         self.cap = None
         self.fps = None
         self.frame_count = None
+        self.current_frame = None  # Store current frame for lap detector access
         
     def open_video(self) -> bool:
         """
@@ -74,6 +75,9 @@ class VideoProcessor:
             
             if not ret:
                 break
+            
+            # Store current frame for lap detector access
+            self.current_frame = frame
             
             timestamp = frame_num / self.fps
             
