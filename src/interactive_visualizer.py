@@ -281,13 +281,19 @@ class InteractiveTelemetryVisualizer:
                 xanchor="right",
                 x=1
             ),
-            hovermode='x unified',  # Show all values at same x-position
+            hovermode='x unified',  # Synchronized hover across all subplots - shows vertical line and all values at same timestamp
             template='plotly_white',
             # Add range slider on bottom plot for easy navigation
             xaxis5=dict(
                 rangeslider=dict(visible=True, thickness=0.05),
                 type='linear'
             )
+        )
+        
+        # Configure hover behavior for synchronized tooltips across all subplots
+        # This ensures that hovering over any graph shows data for all graphs at that timestamp
+        fig.update_traces(
+            xaxis='x',  # All traces reference the same x-axis for synchronized behavior
         )
         
         # Save as interactive HTML
@@ -633,10 +639,13 @@ class InteractiveTelemetryVisualizer:
                 xanchor="right",
                 x=0.99
             ),
-            hovermode='x unified',
+            hovermode='x unified',  # Synchronized hover - shows all lap data at same timestamp
             template='plotly_white',
             xaxis3=dict(rangeslider=dict(visible=True, thickness=0.05))
         )
+        
+        # Configure synchronized hover tooltips
+        fig.update_traces(xaxis='x')
         
         fig.write_html(filepath)
         
