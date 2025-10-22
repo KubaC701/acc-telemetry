@@ -39,3 +39,11 @@ last_lap_time:
   width: 87
   height: 20
 
+# Speed - current speed in km/h displayed in bottom-right corner
+# Located above throttle bar, inside the rev meter arc
+speed:
+  x: 1177
+  y: 621
+  width: 54
+  height: 32
+

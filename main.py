@@ -21,7 +21,7 @@ def main():
     """Main processing pipeline."""
     
     # Configuration
-    VIDEO_PATH = './test-acc.mp4'  # Full race video for testing
+    VIDEO_PATH = './input_video.mp4'  # Full race video for testing
     CONFIG_PATH = 'config/roi_config.yaml'
     
     print("=" * 60)
@@ -67,36 +67,49 @@ def main():
     previous_lap = None
     lap_transitions = []  # Track lap transition frames
     completed_lap_times = {}  # Map lap_number -> lap_time for completed laps
+    frames_since_transition = 0  # Counter to capture lap time on first frame after transition
     
     try:
         for frame_num, timestamp, roi_dict in processor.process_frames():
             # Extract telemetry from current frame
             telemetry = extractor.extract_frame_telemetry(roi_dict)
             
-            # Extract lap number (using full frame from processor)
+            # Extract lap number and speed (using full frame from processor)
             lap_number = lap_detector.extract_lap_number(processor.current_frame)
+            speed = lap_detector.extract_speed(processor.current_frame)
             
-            # Detect lap transitions and extract completed lap time
+            # Detect lap transitions
             if lap_detector.detect_lap_transition(lap_number, previous_lap):
-                # We just started a new lap - extract the LAST lap time for the completed lap
-                completed_lap_time = lap_detector.extract_last_lap_time(processor.current_frame)
-                
-                if completed_lap_time and previous_lap is not None:
-                    completed_lap_times[previous_lap] = completed_lap_time
+                # Lap transition detected - mark to read lap time on NEXT frame
+                frames_since_transition = 1  # Will trigger lap time read on next iteration
                 
                 lap_transitions.append({
                     'frame': frame_num,
                     'time': timestamp,
                     'from_lap': previous_lap,
                     'to_lap': lap_number,
-                    'completed_lap_time': completed_lap_time
+                    'completed_lap_time': None  # Will be filled on next frame
                 })
+            elif frames_since_transition == 1:
+                # This is the FIRST frame after lap transition - read LAST lap time
+                completed_lap_time = lap_detector.extract_last_lap_time(processor.current_frame)
+                
+                if completed_lap_time and previous_lap is not None:
+                    completed_lap_times[previous_lap] = completed_lap_time
+                    
+                    # Update the last transition record with the lap time
+                    if lap_transitions:
+                        lap_transitions[-1]['completed_lap_time'] = completed_lap_time
+                
+                frames_since_transition = 0  # Reset counter
             
             # Store data (lap_time will be filled in post-processing)
             telemetry_data.append({
                 'frame': frame_num,
                 'time': timestamp,
                 'lap_number': lap_number,
+                'lap_time': None,  # Will be filled from completed_lap_times
+                'speed': speed,
                 'throttle': telemetry['throttle'],
                 'brake': telemetry['brake'],
                 'steering': telemetry['steering']
@@ -157,6 +170,7 @@ def main():
     print(f"\n📊 Telemetry Summary:")
     print(f"   Duration: {summary['duration']:.2f} seconds")
     print(f"   Total frames: {summary['total_frames']}")
+    print(f"   Avg Speed: {summary['avg_speed']:.1f} km/h (max: {summary['max_speed']:.1f} km/h)")
     print(f"   Avg Throttle: {summary['avg_throttle']:.1f}% (max: {summary['max_throttle']:.1f}%)")
     print(f"   Avg Brake: {summary['avg_brake']:.1f}% (max: {summary['max_brake']:.1f}%)")
     print(f"   Avg Steering: {summary['avg_steering_abs']:.2f} (range: {summary['max_steering_left']:.2f} to {summary['max_steering_right']:.2f})")
