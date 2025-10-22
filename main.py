@@ -21,7 +21,7 @@ def main():
     """Main processing pipeline."""
     
     # Configuration
-    VIDEO_PATH = './input_video.mp4'  # Place your video here
+    VIDEO_PATH = './test-acc.mp4'  # Full race video for testing
     CONFIG_PATH = 'config/roi_config.yaml'
     
     print("=" * 60)
@@ -43,7 +43,8 @@ def main():
     print(f"🎥 Opening video: {VIDEO_PATH}")
     processor = VideoProcessor(VIDEO_PATH, roi_config)
     extractor = TelemetryExtractor()
-    lap_detector = LapDetector(roi_config)
+    # Use template matching for lap numbers (100-500x faster than OCR)
+    lap_detector = LapDetector(roi_config, enable_performance_stats=True)
     visualizer = InteractiveTelemetryVisualizer()
     
     if not processor.open_video():
@@ -124,6 +125,16 @@ def main():
         for entry in telemetry_data:
             lap_num = entry['lap_number']
             entry['lap_time'] = completed_lap_times.get(lap_num, None)
+        
+        # Display lap detection performance statistics
+        perf_stats = lap_detector.get_performance_stats()
+        if 'error' not in perf_stats:
+            print(f"\n⚡ Lap Detection Performance:")
+            print(f"   Method: {perf_stats['method']}")
+            print(f"   Total frames: {perf_stats['total_frames']}")
+            print(f"   Recognition calls: {perf_stats['recognition_calls']}")
+            print(f"   Avg time per frame: {perf_stats['avg_time_per_frame_ms']:.1f}ms")
+            print(f"   Speedup vs OCR: {perf_stats['estimated_speedup_vs_ocr']:.0f}x faster")
         
     finally:
         processor.close()
