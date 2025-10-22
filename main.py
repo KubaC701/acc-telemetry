@@ -21,7 +21,7 @@ def main():
     """Main processing pipeline."""
     
     # Configuration
-    VIDEO_PATH = './input_video.mp4'  # Full race video for testing
+    VIDEO_PATH = './test-acc.mp4'  # Full race video for testing
     CONFIG_PATH = 'config/roi_config.yaml'
     
     print("=" * 60)
