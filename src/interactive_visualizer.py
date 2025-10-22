@@ -87,13 +87,13 @@ class InteractiveTelemetryVisualizer:
         
         filepath = self.output_dir / filename
         
-        # Create figure with 4 subplots (shared x-axis for synchronized zooming)
+        # Create figure with 5 subplots (shared x-axis for synchronized zooming)
         fig = make_subplots(
-            rows=4, cols=1,
+            rows=5, cols=1,
             shared_xaxes=True,
-            vertical_spacing=0.06,
-            subplot_titles=('Throttle Input', 'Brake Input', 'Steering Input', 'Speed'),
-            row_heights=[0.25, 0.25, 0.25, 0.25]
+            vertical_spacing=0.05,
+            subplot_titles=('Throttle Input', 'Brake Input', 'Steering Input', 'Speed', 'Gear'),
+            row_heights=[0.20, 0.20, 0.20, 0.20, 0.20]
         )
         
         # ===== THROTTLE PLOT (Row 1) =====
@@ -161,6 +161,20 @@ class InteractiveTelemetryVisualizer:
             row=4, col=1
         )
         
+        # ===== GEAR PLOT (Row 5) =====
+        # Use step plot for gear (gears change discretely, not continuously)
+        fig.add_trace(
+            go.Scatter(
+                x=df['time'],
+                y=df['gear'],
+                mode='lines',
+                name='Gear',
+                line=dict(color='#9B59B6', width=2, shape='hv'),  # 'hv' creates step effect
+                hovertemplate='<b>Gear</b><br>Time: %{x:.2f}s<br>Gear: %{y:.0f}<extra></extra>'
+            ),
+            row=5, col=1
+        )
+        
         # ===== UPDATE AXES =====
         # Throttle Y-axis
         fig.update_yaxes(
@@ -194,11 +208,19 @@ class InteractiveTelemetryVisualizer:
             row=4, col=1
         )
         
+        # Gear Y-axis
+        fig.update_yaxes(
+            title_text="Gear", 
+            range=[0, 7],
+            gridcolor='rgba(128, 128, 128, 0.2)',
+            row=5, col=1
+        )
+        
         # X-axis (only on bottom plot)
         fig.update_xaxes(
             title_text="Time (seconds)",
             gridcolor='rgba(128, 128, 128, 0.2)',
-            row=4, col=1
+            row=5, col=1
         )
         
         # ===== LAP VISUALIZATION FEATURES =====
@@ -217,8 +239,8 @@ class InteractiveTelemetryVisualizer:
                     transition_time = row['time']
                     lap_num = int(row['lap_number'])
                     
-                    # Add vertical line on all four subplots
-                    for subplot_row in [1, 2, 3, 4]:
+                    # Add vertical line on all five subplots
+                    for subplot_row in [1, 2, 3, 4, 5]:
                         fig.add_vline(
                             x=transition_time,
                             line_dash="dash",
@@ -262,7 +284,7 @@ class InteractiveTelemetryVisualizer:
             hovermode='x unified',  # Show all values at same x-position
             template='plotly_white',
             # Add range slider on bottom plot for easy navigation
-            xaxis4=dict(
+            xaxis5=dict(
                 rangeslider=dict(visible=True, thickness=0.05),
                 type='linear'
             )

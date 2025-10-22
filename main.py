@@ -74,9 +74,10 @@ def main():
             # Extract telemetry from current frame
             telemetry = extractor.extract_frame_telemetry(roi_dict)
             
-            # Extract lap number and speed (using full frame from processor)
+            # Extract lap number, speed, and gear (using full frame from processor)
             lap_number = lap_detector.extract_lap_number(processor.current_frame)
             speed = lap_detector.extract_speed(processor.current_frame)
+            gear = lap_detector.extract_gear(processor.current_frame)
             
             # Detect lap transitions
             if lap_detector.detect_lap_transition(lap_number, previous_lap):
@@ -110,6 +111,7 @@ def main():
                 'lap_number': lap_number,
                 'lap_time': None,  # Will be filled from completed_lap_times
                 'speed': speed,
+                'gear': gear,
                 'throttle': telemetry['throttle'],
                 'brake': telemetry['brake'],
                 'steering': telemetry['steering']

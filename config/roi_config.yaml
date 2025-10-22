@@ -47,3 +47,11 @@ speed:
   width: 54
   height: 32
 
+# Gear - current gear (1-6) displayed in bottom-right corner
+# Located in the center of the rev meter arc
+gear:
+  x: 1124
+  y: 591
+  width: 47
+  height: 72
+

@@ -50,10 +50,12 @@ class LapDetector:
             self.lap_number_roi = {'x': 237, 'y': 71, 'width': 47, 'height': 37}
             self.last_lap_time_roi = {'x': 119, 'y': 87, 'width': 87, 'height': 20}
             self.speed_roi = {'x': 1177, 'y': 621, 'width': 54, 'height': 32}
+            self.gear_roi = {'x': 1124, 'y': 591, 'width': 47, 'height': 72}
         else:
             self.lap_number_roi = roi_config.get('lap_number', {})
             self.last_lap_time_roi = roi_config.get('last_lap_time', {})
             self.speed_roi = roi_config.get('speed', {})
+            self.gear_roi = roi_config.get('gear', {})
         
         # Initialize template matcher for lap numbers
         self.lap_matcher = TemplateMatcher(template_dir)
@@ -62,8 +64,10 @@ class LapDetector:
         self._last_valid_lap_number: Optional[int] = None
         self._last_valid_lap_time: Optional[str] = None
         self._last_valid_speed: Optional[int] = None
+        self._last_valid_gear: Optional[int] = None
         self._lap_number_history: list = []  # Track recent detections for stability
         self._speed_history: list = []  # Track recent speed detections for stability
+        self._gear_history: list = []  # Track recent gear detections for stability
         self._history_size: int = 15  # Number of frames to track (increased for better OCR stability)
         
         # Performance statistics
@@ -447,6 +451,175 @@ class LapDetector:
         # Use median to filter outliers (more robust than mean)
         import statistics
         return int(statistics.median(self._speed_history))
+    
+    def extract_gear(self, frame: np.ndarray) -> Optional[int]:
+        """
+        Extract current gear (1-6) from the HUD gear display.
+        
+        Uses direct OCR on raw ROI (no preprocessing overhead).
+        The gear appears as a white digit in the center of the rev meter arc.
+        
+        Args:
+            frame: Full video frame (BGR format)
+            
+        Returns:
+            Gear as integer (1-6), or None if extraction fails
+        """
+        if frame is None or frame.size == 0:
+            return self._last_valid_gear
+        
+        # Extract ROI
+        roi = self._extract_roi(frame, self.gear_roi)
+        if roi is None or roi.size == 0:
+            return self._last_valid_gear
+        
+        # Preprocess ROI to improve OCR accuracy
+        # The gear digit is white on dark background, so isolate white pixels
+        try:
+            # Convert to grayscale
+            gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+            
+            # Threshold to isolate white digits (gear is bright white)
+            _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
+            
+            # Resize for better OCR (upscale 2x helps with small digits)
+            height, width = thresh.shape
+            preprocessed = cv2.resize(thresh, (width * 2, height * 2), interpolation=cv2.INTER_CUBIC)
+            
+        except Exception:
+            # If preprocessing fails, use original ROI
+            preprocessed = roi
+        
+        # Run OCR on preprocessed image
+        try:
+            if self._tesserocr_api:
+                # Fast path: tesserocr (1-2ms)
+                # Convert grayscale to RGB for PIL
+                if len(preprocessed.shape) == 2:  # grayscale
+                    preprocessed_rgb = cv2.cvtColor(preprocessed, cv2.COLOR_GRAY2RGB)
+                else:  # already BGR
+                    preprocessed_rgb = cv2.cvtColor(preprocessed, cv2.COLOR_BGR2RGB)
+                pil_image = Image.fromarray(preprocessed_rgb)
+                
+                # Temporarily set character whitelist for gears (1-6)
+                self._tesserocr_api.SetVariable("tessedit_char_whitelist", "123456")
+                self._tesserocr_api.SetImage(pil_image)
+                text = self._tesserocr_api.GetUTF8Text()
+                
+                # Reset to digit-only (0-9) for lap numbers/speed
+                self._tesserocr_api.SetVariable("tessedit_char_whitelist", "0123456789")
+            else:
+                # Slow path: pytesseract (50ms)
+                import pytesseract
+                tesseract_config_gear = '--psm 8 --oem 3 -c tessedit_char_whitelist=123456'
+                text = pytesseract.image_to_string(preprocessed, config=tesseract_config_gear)
+            
+            text = text.strip()
+            
+            # Parse gear (should be single digit 1-6)
+            if text.isdigit():
+                gear = int(text)
+            else:
+                # Try to extract digits from text (in case of noise)
+                digits_only = ''.join(filter(str.isdigit, text))
+                if digits_only:
+                    gear = int(digits_only)
+                else:
+                    gear = None
+        except Exception as e:
+            gear = None
+        
+        if gear is not None:
+            # Validate: gear should be 1-6 (ACC gears)
+            if 1 <= gear <= 6:
+                # Add to history for temporal smoothing
+                self._gear_history.append(gear)
+                if len(self._gear_history) > self._history_size:
+                    self._gear_history.pop(0)
+                
+                # Use majority voting to smooth out OCR noise
+                smoothed_gear = self._get_smoothed_gear()
+                
+                if smoothed_gear is not None:
+                    # Additional validation: prevent unlikely gear jumps
+                    # If we have a previous gear, check if the change makes sense
+                    if self._last_valid_gear is not None:
+                        gear_diff = abs(smoothed_gear - self._last_valid_gear)
+                        
+                        # Allow: same gear (0) or sequential gear changes (±1)
+                        # Reject: jumps of 2+ gears unless history strongly agrees (80%+)
+                        if gear_diff == 0:
+                            # No change - always accept
+                            return self._last_valid_gear
+                        elif gear_diff == 1:
+                            # Sequential change (2->3, 4->3) - require 75% consensus
+                            # This prevents OCR misreads (2 read as 4) from causing false shifts
+                            from collections import Counter
+                            gear_counts = Counter(self._gear_history)
+                            most_common = gear_counts.most_common(1)[0]
+                            count = most_common[1]
+                            
+                            # 75% threshold for sequential changes (11 out of 15 frames)
+                            if count >= max(len(self._gear_history) * 0.75, 3):
+                                self._last_valid_gear = smoothed_gear
+                                return smoothed_gear
+                            else:
+                                # Not enough consensus yet - keep previous gear
+                                return self._last_valid_gear
+                        else:
+                            # Large jump (2->4, 3->6) - require 80% consensus to avoid OCR errors
+                            from collections import Counter
+                            gear_counts = Counter(self._gear_history)
+                            most_common = gear_counts.most_common(1)[0]
+                            count = most_common[1]
+                            
+                            # 80% threshold for large jumps (12 out of 15 frames)
+                            if count >= max(len(self._gear_history) * 0.80, 3):
+                                self._last_valid_gear = smoothed_gear
+                                return smoothed_gear
+                            else:
+                                # Not enough consensus for big jump - keep previous gear
+                                return self._last_valid_gear
+                    else:
+                        # First detection - accept it
+                        self._last_valid_gear = smoothed_gear
+                        return smoothed_gear
+        
+        # Return last known good value
+        return self._last_valid_gear
+    
+    def _get_smoothed_gear(self) -> Optional[int]:
+        """
+        Apply majority voting to recent gear detections to filter out OCR noise.
+        
+        Uses same approach as lap number smoothing - requires consensus to prevent
+        single-frame OCR errors from causing gear jumps (e.g., 2 -> 4 -> 2).
+        
+        While gears CAN jump arbitrarily (6 to 2, 3 to 5), these jumps happen
+        intentionally over multiple frames, not single-frame OCR glitches.
+        
+        Returns:
+            Most common gear in recent history (with 70% consensus), or None if no consensus
+        """
+        if not self._gear_history:
+            return None
+        
+        # Count occurrences of each gear
+        from collections import Counter
+        gear_counts = Counter(self._gear_history)
+        
+        # Get the most common gear
+        most_common = gear_counts.most_common(1)[0]
+        gear = most_common[0]
+        count = most_common[1]
+        
+        # Require at least 70% agreement (e.g., 11 out of 15 frames)
+        # This prevents single-frame OCR errors but allows genuine gear changes
+        if count >= max(len(self._gear_history) * 0.7, 3):
+            return gear
+        
+        # Not enough consensus, return None to keep previous value
+        return None
     
     def get_lap_time_seconds(self, lap_time_str: Optional[str]) -> Optional[float]:
         """
