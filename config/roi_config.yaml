@@ -24,3 +24,18 @@ steering:
   width: 134
   height: 9
 
+# Lap number - red flag with white number in top-left corner
+lap_number:
+  x: 237
+  y: 71
+  width: 47
+  height: 37
+
+# Last lap time - "LAST" lap time shown after completing a lap
+# This is the actual completed lap time, captured at the start of the next lap
+last_lap_time:
+  x: 119
+  y: 87
+  width: 87
+  height: 20
+
