@@ -473,33 +473,13 @@ class LapDetector:
         if roi is None or roi.size == 0:
             return self._last_valid_gear
         
-        # Preprocess ROI to improve OCR accuracy
-        # The gear digit is white on dark background, so isolate white pixels
-        try:
-            # Convert to grayscale
-            gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-            
-            # Threshold to isolate white digits (gear is bright white)
-            _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
-            
-            # Resize for better OCR (upscale 2x helps with small digits)
-            height, width = thresh.shape
-            preprocessed = cv2.resize(thresh, (width * 2, height * 2), interpolation=cv2.INTER_CUBIC)
-            
-        except Exception:
-            # If preprocessing fails, use original ROI
-            preprocessed = roi
-        
-        # Run OCR on preprocessed image
+        # Run OCR directly on raw BGR ROI
+        # No preprocessing needed - Tesseract handles it well
         try:
             if self._tesserocr_api:
                 # Fast path: tesserocr (1-2ms)
-                # Convert grayscale to RGB for PIL
-                if len(preprocessed.shape) == 2:  # grayscale
-                    preprocessed_rgb = cv2.cvtColor(preprocessed, cv2.COLOR_GRAY2RGB)
-                else:  # already BGR
-                    preprocessed_rgb = cv2.cvtColor(preprocessed, cv2.COLOR_BGR2RGB)
-                pil_image = Image.fromarray(preprocessed_rgb)
+                roi_rgb = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB)
+                pil_image = Image.fromarray(roi_rgb)
                 
                 # Temporarily set character whitelist for gears (1-6)
                 self._tesserocr_api.SetVariable("tessedit_char_whitelist", "123456")
@@ -512,7 +492,7 @@ class LapDetector:
                 # Slow path: pytesseract (50ms)
                 import pytesseract
                 tesseract_config_gear = '--psm 8 --oem 3 -c tessedit_char_whitelist=123456'
-                text = pytesseract.image_to_string(preprocessed, config=tesseract_config_gear)
+                text = pytesseract.image_to_string(roi, config=tesseract_config_gear)
             
             text = text.strip()
             
@@ -537,53 +517,12 @@ class LapDetector:
                 if len(self._gear_history) > self._history_size:
                     self._gear_history.pop(0)
                 
-                # Use majority voting to smooth out OCR noise
+                # Use median filtering to smooth out OCR noise
                 smoothed_gear = self._get_smoothed_gear()
                 
                 if smoothed_gear is not None:
-                    # Additional validation: prevent unlikely gear jumps
-                    # If we have a previous gear, check if the change makes sense
-                    if self._last_valid_gear is not None:
-                        gear_diff = abs(smoothed_gear - self._last_valid_gear)
-                        
-                        # Allow: same gear (0) or sequential gear changes (±1)
-                        # Reject: jumps of 2+ gears unless history strongly agrees (80%+)
-                        if gear_diff == 0:
-                            # No change - always accept
-                            return self._last_valid_gear
-                        elif gear_diff == 1:
-                            # Sequential change (2->3, 4->3) - require 75% consensus
-                            # This prevents OCR misreads (2 read as 4) from causing false shifts
-                            from collections import Counter
-                            gear_counts = Counter(self._gear_history)
-                            most_common = gear_counts.most_common(1)[0]
-                            count = most_common[1]
-                            
-                            # 75% threshold for sequential changes (11 out of 15 frames)
-                            if count >= max(len(self._gear_history) * 0.75, 3):
-                                self._last_valid_gear = smoothed_gear
-                                return smoothed_gear
-                            else:
-                                # Not enough consensus yet - keep previous gear
-                                return self._last_valid_gear
-                        else:
-                            # Large jump (2->4, 3->6) - require 80% consensus to avoid OCR errors
-                            from collections import Counter
-                            gear_counts = Counter(self._gear_history)
-                            most_common = gear_counts.most_common(1)[0]
-                            count = most_common[1]
-                            
-                            # 80% threshold for large jumps (12 out of 15 frames)
-                            if count >= max(len(self._gear_history) * 0.80, 3):
-                                self._last_valid_gear = smoothed_gear
-                                return smoothed_gear
-                            else:
-                                # Not enough consensus for big jump - keep previous gear
-                                return self._last_valid_gear
-                    else:
-                        # First detection - accept it
-                        self._last_valid_gear = smoothed_gear
-                        return smoothed_gear
+                    self._last_valid_gear = smoothed_gear
+                    return smoothed_gear
         
         # Return last known good value
         return self._last_valid_gear
