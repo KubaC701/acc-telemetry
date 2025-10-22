@@ -4,11 +4,62 @@ Extracts throttle, brake, and steering telemetry from ACC gameplay videos.
 """
 
 import yaml
+import time
 from pathlib import Path
 from src.video_processor import VideoProcessor
 from src.telemetry_extractor import TelemetryExtractor
 from src.lap_detector import LapDetector
 from src.interactive_visualizer import InteractiveTelemetryVisualizer
+
+
+class PerformanceTracker:
+    """Tracks timing statistics for each processing step."""
+    
+    def __init__(self):
+        self.timings = {
+            'frame_processing': [],
+            'telemetry_extraction': [],
+            'lap_number_detection': [],
+            'speed_extraction': [],
+            'gear_extraction': [],
+            'lap_transition_detection': [],
+            'lap_time_extraction': [],
+            'data_storage': []
+        }
+        self.total_frames = 0
+    
+    def record(self, step: str, duration: float):
+        """Record timing for a specific step (in milliseconds)."""
+        if step in self.timings:
+            self.timings[step].append(duration * 1000)  # Convert to ms
+    
+    def print_summary(self):
+        """Print detailed performance summary."""
+        print(f"\n⏱️  Performance Breakdown:")
+        print(f"   {'Operation':<30} {'Total (s)':<12} {'Avg (ms)':<12} {'Min (ms)':<12} {'Max (ms)':<12} {'% of Total':<12}")
+        print(f"   {'-'*100}")
+        
+        total_time = sum(sum(times) for times in self.timings.values())
+        
+        for step, times in self.timings.items():
+            if times:
+                total_s = sum(times) / 1000
+                avg_ms = sum(times) / len(times)
+                min_ms = min(times)
+                max_ms = max(times)
+                percentage = (sum(times) / total_time) * 100 if total_time > 0 else 0
+                
+                # Format step name (remove underscores, capitalize)
+                step_name = step.replace('_', ' ').title()
+                
+                print(f"   {step_name:<30} {total_s:<12.2f} {avg_ms:<12.2f} {min_ms:<12.2f} {max_ms:<12.2f} {percentage:<12.1f}%")
+        
+        print(f"   {'-'*100}")
+        print(f"   {'TOTAL':<30} {total_time/1000:<12.2f}")
+        print(f"\n   Per-frame average: {(total_time/len(self.timings['frame_processing']) if self.timings['frame_processing'] else 0):.2f}ms")
+        print(f"   Frames processed: {self.total_frames}")
+        if self.total_frames > 0:
+            print(f"   Actual FPS: {self.total_frames / (total_time/1000):.2f}")
 
 
 def load_config(config_path: str = 'config/roi_config.yaml'):
@@ -19,6 +70,9 @@ def load_config(config_path: str = 'config/roi_config.yaml'):
 
 def main():
     """Main processing pipeline."""
+    
+    # Track total execution time
+    total_start_time = time.time()
     
     # Configuration
     VIDEO_PATH = './test-acc.mp4'  # Full race video for testing
@@ -62,6 +116,9 @@ def main():
     print(f"\n⚙️  Processing frames and extracting telemetry...")
     print("   (This may take a few minutes depending on video length)")
     
+    # Initialize performance tracker
+    perf_tracker = PerformanceTracker()
+    
     telemetry_data = []
     last_progress = -1
     previous_lap = None
@@ -71,15 +128,30 @@ def main():
     
     try:
         for frame_num, timestamp, roi_dict in processor.process_frames():
-            # Extract telemetry from current frame
-            telemetry = extractor.extract_frame_telemetry(roi_dict)
+            frame_start = time.time()
             
-            # Extract lap number, speed, and gear (using full frame from processor)
+            # Extract telemetry from current frame
+            telemetry_start = time.time()
+            telemetry = extractor.extract_frame_telemetry(roi_dict)
+            perf_tracker.record('telemetry_extraction', time.time() - telemetry_start)
+            
+            # Extract lap number
+            lap_start = time.time()
             lap_number = lap_detector.extract_lap_number(processor.current_frame)
+            perf_tracker.record('lap_number_detection', time.time() - lap_start)
+            
+            # Extract speed
+            speed_start = time.time()
             speed = lap_detector.extract_speed(processor.current_frame)
+            perf_tracker.record('speed_extraction', time.time() - speed_start)
+            
+            # Extract gear
+            gear_start = time.time()
             gear = lap_detector.extract_gear(processor.current_frame)
+            perf_tracker.record('gear_extraction', time.time() - gear_start)
             
             # Detect lap transitions
+            transition_start = time.time()
             if lap_detector.detect_lap_transition(lap_number, previous_lap):
                 # Lap transition detected - mark to read lap time on NEXT frame
                 frames_since_transition = 1  # Will trigger lap time read on next iteration
@@ -93,7 +165,9 @@ def main():
                 })
             elif frames_since_transition == 1:
                 # This is the FIRST frame after lap transition - read LAST lap time
+                lap_time_start = time.time()
                 completed_lap_time = lap_detector.extract_last_lap_time(processor.current_frame)
+                perf_tracker.record('lap_time_extraction', time.time() - lap_time_start)
                 
                 if completed_lap_time and previous_lap is not None:
                     completed_lap_times[previous_lap] = completed_lap_time
@@ -103,8 +177,10 @@ def main():
                         lap_transitions[-1]['completed_lap_time'] = completed_lap_time
                 
                 frames_since_transition = 0  # Reset counter
+            perf_tracker.record('lap_transition_detection', time.time() - transition_start)
             
             # Store data (lap_time will be filled in post-processing)
+            storage_start = time.time()
             telemetry_data.append({
                 'frame': frame_num,
                 'time': timestamp,
@@ -116,8 +192,13 @@ def main():
                 'brake': telemetry['brake'],
                 'steering': telemetry['steering']
             })
+            perf_tracker.record('data_storage', time.time() - storage_start)
             
             previous_lap = lap_number
+            perf_tracker.total_frames += 1
+            
+            # Record total frame processing time
+            perf_tracker.record('frame_processing', time.time() - frame_start)
             
             # Progress indicator
             progress = int((frame_num / video_info['frame_count']) * 100)
@@ -151,21 +232,37 @@ def main():
             print(f"   Avg time per frame: {perf_stats['avg_time_per_frame_ms']:.1f}ms")
             print(f"   Speedup vs OCR: {perf_stats['estimated_speedup_vs_ocr']:.0f}x faster")
         
+        # Display detailed performance breakdown
+        perf_tracker.print_summary()
+        
     finally:
         processor.close()
     
     # Create DataFrame
     print(f"\n📈 Generating outputs...")
+    
+    df_start = time.time()
     df = visualizer.create_dataframe(telemetry_data)
+    df_time = time.time() - df_start
     
     # Export CSV
+    csv_start = time.time()
     csv_path = visualizer.export_csv(df)
-    print(f"   ✅ CSV saved: {csv_path}")
+    csv_time = time.time() - csv_start
+    print(f"   ✅ CSV saved: {csv_path} (took {csv_time*1000:.1f}ms)")
     
     # Generate interactive HTML graph
+    graph_start = time.time()
     graph_path = visualizer.plot_telemetry(df)
-    print(f"   ✅ Interactive graph saved: {graph_path}")
+    graph_time = time.time() - graph_start
+    print(f"   ✅ Interactive graph saved: {graph_path} (took {graph_time:.2f}s)")
     print(f"      💡 Open this HTML file in your browser for interactive zoom/pan/hover!")
+    
+    print(f"\n   Output Generation Summary:")
+    print(f"      DataFrame creation: {df_time*1000:.1f}ms")
+    print(f"      CSV export: {csv_time*1000:.1f}ms")
+    print(f"      Graph generation: {graph_time:.2f}s")
+    print(f"      Total: {(df_time + csv_time + graph_time):.2f}s")
     
     # Display summary
     summary = visualizer.generate_summary(df)
@@ -193,6 +290,10 @@ def main():
     print("\n" + "=" * 60)
     print("✅ Processing complete!")
     print("=" * 60)
+    
+    # Display total execution time
+    total_time = time.time() - total_start_time
+    print(f"\n⏱️  Total Execution Time: {total_time:.2f}s ({total_time/60:.1f} minutes)")
 
 
 if __name__ == '__main__':
