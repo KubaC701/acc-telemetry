@@ -40,7 +40,7 @@ class LapDetector:
         Initialize lap detector with ROI configuration.
         
         Args:
-            roi_config: Dictionary with 'lap_number' and 'last_lap_time' ROI coordinates
+            roi_config: Dictionary with 'lap_number', 'last_lap_time', and 'speed' ROI coordinates
                        If None, uses default coordinates for 1280x720 video
             template_dir: Directory containing digit templates for lap number recognition
             enable_performance_stats: If True, tracks and reports detection statistics
@@ -49,9 +49,11 @@ class LapDetector:
             # Default ROI coordinates for 1280x720 video
             self.lap_number_roi = {'x': 237, 'y': 71, 'width': 47, 'height': 37}
             self.last_lap_time_roi = {'x': 119, 'y': 87, 'width': 87, 'height': 20}
+            self.speed_roi = {'x': 1177, 'y': 621, 'width': 54, 'height': 32}
         else:
             self.lap_number_roi = roi_config.get('lap_number', {})
             self.last_lap_time_roi = roi_config.get('last_lap_time', {})
+            self.speed_roi = roi_config.get('speed', {})
         
         # Initialize template matcher for lap numbers
         self.lap_matcher = TemplateMatcher(template_dir)
@@ -59,7 +61,9 @@ class LapDetector:
         # Cache for lap number with temporal smoothing
         self._last_valid_lap_number: Optional[int] = None
         self._last_valid_lap_time: Optional[str] = None
+        self._last_valid_speed: Optional[int] = None
         self._lap_number_history: list = []  # Track recent detections for stability
+        self._speed_history: list = []  # Track recent speed detections for stability
         self._history_size: int = 15  # Number of frames to track (increased for better OCR stability)
         
         # Performance statistics
@@ -241,12 +245,12 @@ class LapDetector:
             Lap time as string in "MM:SS.mmm" format, or None if extraction fails
         """
         if frame is None or frame.size == 0:
-            return None
+            return self._last_valid_lap_time
         
         # Extract ROI
         roi = self._extract_roi(frame, self.last_lap_time_roi)
         if roi is None or roi.size == 0:
-            return None
+            return self._last_valid_lap_time
         
         # Preprocess: isolate white text
         gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
@@ -254,15 +258,34 @@ class LapDetector:
         # Threshold to get white text (lap time is bright white)
         _, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
         
-        # Resize for better OCR
+        # Resize for better OCR (helps with small text)
         scale_factor = 3
         height, width = thresh.shape
         resized = cv2.resize(thresh, (width * scale_factor, height * scale_factor), 
                             interpolation=cv2.INTER_CUBIC)
         
-        # Run OCR
+        # Run OCR using same approach as lap numbers
         try:
-            text = pytesseract.image_to_string(resized, config=self.tesseract_config_time)
+            if self._tesserocr_api:
+                # Fast path: tesserocr (1-2ms)
+                # Need to convert grayscale to RGB for PIL
+                resized_rgb = cv2.cvtColor(resized, cv2.COLOR_GRAY2RGB)
+                pil_image = Image.fromarray(resized_rgb)
+                
+                # Temporarily set character whitelist for time format
+                self._tesserocr_api.SetVariable("tessedit_char_whitelist", "0123456789:.")
+                self._tesserocr_api.SetPageSegMode(tesserocr.PSM.SINGLE_LINE)
+                self._tesserocr_api.SetImage(pil_image)
+                text = self._tesserocr_api.GetUTF8Text()
+                
+                # Reset to digit-only for lap numbers
+                self._tesserocr_api.SetVariable("tessedit_char_whitelist", "0123456789")
+                self._tesserocr_api.SetPageSegMode(tesserocr.PSM.SINGLE_WORD)
+            else:
+                # Slow path: pytesseract (50ms)
+                import pytesseract
+                text = pytesseract.image_to_string(resized, config=self.tesseract_config_time)
+            
             text = text.strip()
             
             # Parse lap time format: MM:SS.mmm
@@ -280,14 +303,15 @@ class LapDetector:
                 # Basic validation: lap times should be reasonable (20 seconds to 10 minutes)
                 total_seconds = int(minutes) * 60 + int(seconds) + int(milliseconds) / 1000
                 if 20.0 <= total_seconds <= 600.0:
+                    self._last_valid_lap_time = lap_time
                     return lap_time
         
         except Exception as e:
-            # OCR failed
+            # OCR failed, keep previous valid time
             pass
         
-        # Return None if extraction failed
-        return None
+        # Return last valid time if extraction failed
+        return self._last_valid_lap_time
     
     def detect_lap_transition(self, current_lap: Optional[int], 
                             previous_lap: Optional[int]) -> bool:
@@ -339,6 +363,90 @@ class LapDetector:
             
         except (KeyError, IndexError):
             return None
+    
+    def extract_speed(self, frame: np.ndarray) -> Optional[int]:
+        """
+        Extract current speed (km/h) from the HUD speed display.
+        
+        Uses direct OCR on raw ROI (no preprocessing overhead).
+        The speed appears as white digits on a dark background in the bottom-right corner.
+        
+        Args:
+            frame: Full video frame (BGR format)
+            
+        Returns:
+            Speed in km/h as integer, or None if extraction fails
+        """
+        if frame is None or frame.size == 0:
+            return self._last_valid_speed
+        
+        # Extract ROI
+        roi = self._extract_roi(frame, self.speed_roi)
+        if roi is None or roi.size == 0:
+            return self._last_valid_speed
+        
+        # Run OCR directly on raw BGR ROI
+        # No preprocessing needed - Tesseract handles it well
+        try:
+            if self._tesserocr_api:
+                # Fast path: tesserocr (1-2ms)
+                roi_rgb = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB)
+                pil_image = Image.fromarray(roi_rgb)
+                self._tesserocr_api.SetImage(pil_image)
+                text = self._tesserocr_api.GetUTF8Text()
+            else:
+                # Slow path: pytesseract (50ms)
+                import pytesseract
+                text = pytesseract.image_to_string(roi, config=self.tesseract_config_lap)
+            
+            text = text.strip()
+            
+            # Parse speed (should be 1-3 digits)
+            if text.isdigit():
+                speed = int(text)
+            else:
+                # Try to extract digits from text (in case of noise)
+                digits_only = ''.join(filter(str.isdigit, text))
+                if digits_only:
+                    speed = int(digits_only)
+                else:
+                    speed = None
+        except Exception as e:
+            speed = None
+        
+        if speed is not None:
+            # Validate: speed should be reasonable (0-400 km/h for ACC)
+            if 0 <= speed <= 400:
+                # Add to history for temporal smoothing
+                self._speed_history.append(speed)
+                if len(self._speed_history) > self._history_size:
+                    self._speed_history.pop(0)
+                
+                # Use median filtering to smooth out OCR noise
+                smoothed_speed = self._get_smoothed_speed()
+                
+                if smoothed_speed is not None:
+                    self._last_valid_speed = smoothed_speed
+                    return smoothed_speed
+        
+        # Return last known good value
+        return self._last_valid_speed
+    
+    def _get_smoothed_speed(self) -> Optional[int]:
+        """
+        Apply median filtering to recent speed detections to filter out OCR noise.
+        
+        Median is more robust than mean for filtering out occasional OCR errors.
+        
+        Returns:
+            Median speed from recent history, or None if history is empty
+        """
+        if not self._speed_history:
+            return None
+        
+        # Use median to filter outliers (more robust than mean)
+        import statistics
+        return int(statistics.median(self._speed_history))
     
     def get_lap_time_seconds(self, lap_time_str: Optional[str]) -> Optional[float]:
         """

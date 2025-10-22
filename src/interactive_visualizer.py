@@ -87,13 +87,13 @@ class InteractiveTelemetryVisualizer:
         
         filepath = self.output_dir / filename
         
-        # Create figure with 3 subplots (shared x-axis for synchronized zooming)
+        # Create figure with 4 subplots (shared x-axis for synchronized zooming)
         fig = make_subplots(
-            rows=3, cols=1,
+            rows=4, cols=1,
             shared_xaxes=True,
-            vertical_spacing=0.08,
-            subplot_titles=('Throttle Input', 'Brake Input', 'Steering Input'),
-            row_heights=[0.33, 0.33, 0.34]
+            vertical_spacing=0.06,
+            subplot_titles=('Throttle Input', 'Brake Input', 'Steering Input', 'Speed'),
+            row_heights=[0.25, 0.25, 0.25, 0.25]
         )
         
         # ===== THROTTLE PLOT (Row 1) =====
@@ -148,6 +148,19 @@ class InteractiveTelemetryVisualizer:
             row=3, col=1
         )
         
+        # ===== SPEED PLOT (Row 4) =====
+        fig.add_trace(
+            go.Scatter(
+                x=df['time'],
+                y=df['speed'],
+                mode='lines',
+                name='Speed',
+                line=dict(color='#FF8C00', width=2),
+                hovertemplate='<b>Speed</b><br>Time: %{x:.2f}s<br>Value: %{y:.0f} km/h<extra></extra>'
+            ),
+            row=4, col=1
+        )
+        
         # ===== UPDATE AXES =====
         # Throttle Y-axis
         fig.update_yaxes(
@@ -173,15 +186,23 @@ class InteractiveTelemetryVisualizer:
             row=3, col=1
         )
         
+        # Speed Y-axis
+        fig.update_yaxes(
+            title_text="Speed (km/h)", 
+            range=[0, 350],
+            gridcolor='rgba(128, 128, 128, 0.2)',
+            row=4, col=1
+        )
+        
         # X-axis (only on bottom plot)
         fig.update_xaxes(
             title_text="Time (seconds)",
             gridcolor='rgba(128, 128, 128, 0.2)',
-            row=3, col=1
+            row=4, col=1
         )
         
         # ===== LAP VISUALIZATION FEATURES =====
-        # Add vertical lap separators if lap_number column exists
+                # Add vertical lap separators if lap_number column exists
         if 'lap_number' in df.columns:
             valid_laps_df = df[df['lap_number'].notna()]
             
@@ -196,8 +217,8 @@ class InteractiveTelemetryVisualizer:
                     transition_time = row['time']
                     lap_num = int(row['lap_number'])
                     
-                    # Add vertical line on all three subplots
-                    for subplot_row in [1, 2, 3]:
+                    # Add vertical line on all four subplots
+                    for subplot_row in [1, 2, 3, 4]:
                         fig.add_vline(
                             x=transition_time,
                             line_dash="dash",
@@ -241,7 +262,7 @@ class InteractiveTelemetryVisualizer:
             hovermode='x unified',  # Show all values at same x-position
             template='plotly_white',
             # Add range slider on bottom plot for easy navigation
-            xaxis3=dict(
+            xaxis4=dict(
                 rangeslider=dict(visible=True, thickness=0.05),
                 type='linear'
             )
@@ -397,6 +418,20 @@ class InteractiveTelemetryVisualizer:
             'max_steering_right': df['steering'].max()
         }
         
+        # Add speed statistics if speed column exists
+        if 'speed' in df.columns:
+            # Filter out None/NaN speeds
+            valid_speeds = df[df['speed'].notna()]
+            if not valid_speeds.empty:
+                summary['avg_speed'] = valid_speeds['speed'].mean()
+                summary['max_speed'] = valid_speeds['speed'].max()
+            else:
+                summary['avg_speed'] = 0.0
+                summary['max_speed'] = 0.0
+        else:
+            summary['avg_speed'] = 0.0
+            summary['max_speed'] = 0.0
+        
         # Add lap-based statistics if lap_number column exists
         if 'lap_number' in df.columns:
             # Filter out None/NaN lap numbers
@@ -413,7 +448,7 @@ class InteractiveTelemetryVisualizer:
                     if not lap_df.empty:
                         lap_duration = lap_df['time'].iloc[-1] - lap_df['time'].iloc[0]
                         
-                        summary['laps'].append({
+                        lap_stats = {
                             'lap_number': int(lap_num),
                             'duration': lap_duration,
                             'frames': len(lap_df),
@@ -422,7 +457,16 @@ class InteractiveTelemetryVisualizer:
                             'max_throttle': lap_df['throttle'].max(),
                             'max_brake': lap_df['brake'].max(),
                             'avg_steering_abs': lap_df['steering'].abs().mean()
-                        })
+                        }
+                        
+                        # Add speed statistics if available
+                        if 'speed' in lap_df.columns:
+                            valid_lap_speeds = lap_df[lap_df['speed'].notna()]
+                            if not valid_lap_speeds.empty:
+                                lap_stats['avg_speed'] = valid_lap_speeds['speed'].mean()
+                                lap_stats['max_speed'] = valid_lap_speeds['speed'].max()
+                        
+                        summary['laps'].append(lap_stats)
             else:
                 summary['total_laps'] = 0
                 summary['laps'] = []
