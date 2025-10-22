@@ -1,11 +1,12 @@
 """
 Debug script to visualize lap number detection.
-Shows what the ROI looks like and what the template matching sees.
+Shows what the ROI looks like and measures OCR performance.
 """
 
 import cv2
 import numpy as np
 import yaml
+import time
 from pathlib import Path
 from src.lap_detector import LapDetector
 from src.template_matcher import TemplateMatcher
@@ -39,10 +40,13 @@ def visualize_lap_detection(video_path: str, test_frames: list):
     debug_dir.mkdir(parents=True, exist_ok=True)
     
     print("="*60)
-    print("Lap Number Detection Debug")
+    print("Lap Number Detection Debug (OCR Performance Test)")
     print("="*60)
     print(f"ROI: x={lap_roi['x']}, y={lap_roi['y']}, w={lap_roi['width']}, h={lap_roi['height']}")
     print(f"Testing {len(test_frames)} frames...\n")
+    
+    total_ocr_time = 0
+    successful_detections = 0
     
     for frame_num in test_frames:
         cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
@@ -56,60 +60,60 @@ def visualize_lap_detection(video_path: str, test_frames: list):
         x, y, w, h = lap_roi['x'], lap_roi['y'], lap_roi['width'], lap_roi['height']
         roi = frame[y:y+h, x:x+w]
         
-        # Preprocess (same as in LapDetector)
-        hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-        lower_white = np.array([0, 0, 180])
-        upper_white = np.array([180, 50, 255])
-        white_mask = cv2.inRange(hsv, lower_white, upper_white)
+        # Show preprocessing (same as in LapDetector)
+        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        _, binary = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
+        inverted = cv2.bitwise_not(binary)
+        scale_factor = 3
+        height_roi, width_roi = inverted.shape
+        upscaled = cv2.resize(inverted, (width_roi * scale_factor, height_roi * scale_factor), 
+                              interpolation=cv2.INTER_LINEAR)
         
-        # Apply morphological operations
-        kernel = np.ones((2, 2), np.uint8)
-        white_mask = cv2.morphologyEx(white_mask, cv2.MORPH_CLOSE, kernel)
-        white_mask = cv2.morphologyEx(white_mask, cv2.MORPH_OPEN, kernel)
-        
-        # Try to recognize
+        # Measure OCR time
+        start_time = time.time()
         lap_number = lap_detector.extract_lap_number(frame)
+        ocr_time = (time.time() - start_time) * 1000  # Convert to ms
         
-        # Create visualization
-        vis = np.hstack([
-            cv2.cvtColor(roi, cv2.COLOR_BGR2RGB),
-            cv2.cvtColor(white_mask, cv2.COLOR_GRAY2RGB)
-        ])
+        total_ocr_time += ocr_time
+        if lap_number is not None:
+            successful_detections += 1
         
         # Save debug images
-        roi_path = debug_dir / f"frame{frame_num}_roi_color.png"
-        mask_path = debug_dir / f"frame{frame_num}_white_mask.png"
-        vis_path = debug_dir / f"frame{frame_num}_visualization.png"
-        
+        roi_path = debug_dir / f"frame{frame_num}_roi.png"
+        preprocessed_path = debug_dir / f"frame{frame_num}_preprocessed.png"
         cv2.imwrite(str(roi_path), roi)
-        cv2.imwrite(str(mask_path), white_mask)
-        cv2.imwrite(str(vis_path), vis)
+        cv2.imwrite(str(preprocessed_path), upscaled)
         
         print(f"📷 Frame {frame_num}:")
         print(f"   Detected lap: {lap_number if lap_number else 'None'}")
-        print(f"   ROI size: {roi.shape[1]}x{roi.shape[0]}")
-        print(f"   White pixels: {np.count_nonzero(white_mask)}")
-        print(f"   Saved: {vis_path}")
-        
-        # Analyze white mask
-        if np.count_nonzero(white_mask) > 0:
-            # Find connected components
-            num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(white_mask, connectivity=8)
-            print(f"   Connected components: {num_labels - 1}")  # -1 for background
-            
-            if num_labels > 1:
-                for i in range(1, min(num_labels, 6)):  # Show first 5
-                    area = stats[i, cv2.CC_STAT_AREA]
-                    x_comp = stats[i, cv2.CC_STAT_LEFT]
-                    w_comp = stats[i, cv2.CC_STAT_WIDTH]
-                    h_comp = stats[i, cv2.CC_STAT_HEIGHT]
-                    print(f"      Component {i}: area={area}, x={x_comp}, w={w_comp}, h={h_comp}")
-        
+        print(f"   ROI size: {roi.shape[1]}x{roi.shape[0]} → {upscaled.shape[1]}x{upscaled.shape[0]}")
+        print(f"   OCR time: {ocr_time:.2f}ms")
+        print(f"   Saved: {roi_path}, {preprocessed_path}")
         print()
     
     cap.release()
     
+    # Print performance summary
     print("="*60)
+    print("Performance Summary")
+    print("="*60)
+    if test_frames:
+        avg_ocr_time = total_ocr_time / len(test_frames)
+        success_rate = (successful_detections / len(test_frames)) * 100
+        print(f"Total frames tested: {len(test_frames)}")
+        print(f"Successful detections: {successful_detections} ({success_rate:.1f}%)")
+        print(f"Average OCR time: {avg_ocr_time:.2f}ms")
+        print(f"Min expected: 10-20ms")
+        print(f"Max acceptable: 25-40ms")
+        
+        if avg_ocr_time <= 25:
+            print(f"✅ SUCCESS: OCR is fast enough!")
+        elif avg_ocr_time <= 40:
+            print(f"⚠️  ACCEPTABLE: OCR is slightly slow but usable")
+        else:
+            print(f"❌ FAILURE: OCR is too slow, consider optimizations")
+    
+    print()
     print("Debug files saved to:", debug_dir)
     print("="*60)
 
