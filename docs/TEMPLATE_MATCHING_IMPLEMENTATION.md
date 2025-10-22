@@ -378,3 +378,4 @@ The sliding window approach is key: instead of trying to isolate digits first, w
 - [Performance Optimization](PERFORMANCE_OPTIMIZATION.md) - Why template matching is faster
 - [ROI Configuration](../config/roi_config.yaml) - ROI coordinates setup
 
+

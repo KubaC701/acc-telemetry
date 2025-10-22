@@ -91,15 +91,103 @@ Use median instead of mean for robustness:
 filled_width = np.median(filled_widths)
 ```
 
+## OCR for Lap Detection
+The project uses **tesserocr** (fast C++ API) for extracting lap numbers and lap times from the HUD.
+
+### Why tesserocr over pytesseract?
+- **Performance**: tesserocr is 25x faster (~2ms vs ~50ms per frame)
+- **Direct API**: Uses Tesseract C++ API directly, no subprocess overhead
+- **Same accuracy**: Both use same Tesseract engine, just different Python bindings
+
+### OCR Strategy: Minimal Preprocessing
+We found that **raw images work best** with tesserocr. No preprocessing overhead needed!
+
+```python
+# Extract ROI
+roi = frame[y:y+height, x:x+width]
+
+# Direct OCR on raw image - works great!
+pil_image = Image.fromarray(roi)
+tesserocr_api.SetImage(pil_image)
+text = tesserocr_api.GetUTF8Text()
+```
+
+**Key insight**: Modern Tesseract LSTM models handle raw images better than preprocessed ones.
+- ❌ **Don't**: Apply thresholding, morphology, or complex preprocessing
+- ✅ **Do**: Extract tight ROI and feed directly to tesserocr
+- ✅ **Do**: Use proper PSM (Page Segmentation Mode) for your text type
+
+### Tesseract Configuration
+Configure tesserocr with appropriate PSM for your use case:
+
+```python
+# For isolated lap numbers (single digits like "21")
+api = tesserocr.PyTessBaseAPI(
+    psm=tesserocr.PSM.SINGLE_WORD,      # PSM 8: Single word
+    oem=tesserocr.OEM.LSTM_ONLY         # OEM 3: LSTM neural network
+)
+api.SetVariable("tessedit_char_whitelist", "0123456789")
+
+# For lap times (format: "01:44.643")
+api = tesserocr.PyTessBaseAPI(
+    psm=tesserocr.PSM.SINGLE_LINE,      # PSM 7: Single line of text
+    oem=tesserocr.OEM.LSTM_ONLY
+)
+api.SetVariable("tessedit_char_whitelist", "0123456789:.")
+```
+
+**PSM modes reference**:
+- PSM 8 (`SINGLE_WORD`): Best for isolated numbers (lap count)
+- PSM 7 (`SINGLE_LINE`): Best for single line text (lap times)
+- PSM 6 (`SINGLE_BLOCK`): Default, but slower for small ROIs
+
+**Character whitelisting**: Always limit to expected characters for better accuracy
+
+### Installation Notes
+```bash
+# Install tesserocr (requires Tesseract to be installed first)
+brew install tesseract  # macOS
+pip install tesserocr
+
+# Verify tesseract installation
+tesseract --version
+
+# Common tessdata path on macOS (homebrew)
+/opt/homebrew/share/tessdata/
+```
+
+### Temporal Smoothing for Stability
+Use majority voting across recent frames to filter OCR noise:
+
+```python
+# Track last 5 detections
+lap_number_history = [20, 21, 20, 21, 21]
+
+# Count occurrences
+from collections import Counter
+lap_counts = Counter(lap_number_history)
+most_common = lap_counts.most_common(1)[0]  # (21, 3)
+
+# Use if at least 40% agreement (2/5 frames)
+if most_common[1] >= max(2, len(history) * 0.4):
+    smoothed_lap = most_common[0]
+```
+
+This prevents flip-flopping between adjacent numbers (e.g., 20 ↔ 21) due to OCR noise.
+
 ## Debugging Tips
 1. Save intermediate images (ROI crops, masks) for visual inspection
 2. Print min/max color values in ROI to tune HSV ranges
 3. Test with frames where TC/ABS are active vs. inactive
 4. Verify ROI coordinates by overlaying rectangles on original frame
 5. Check that masks have expected white regions (use cv2.imshow in debug mode)
+6. For OCR debugging: save ROI images and test with `tesseract` CLI directly
+7. Check tesserocr timing: should be ~1-2ms per frame (vs 50ms for pytesseract)
 
-## Future Enhancements
-- Template matching for automatic ROI detection
-- Adaptive thresholding for varying lighting conditions
-- OCR integration for reading lap times and gear numbers
-- Multi-resolution support with automatic scaling
+## Performance Benchmarks
+- **Throttle/Brake detection** (HSV color masking): ~0.5ms per bar
+- **Steering detection** (contour finding): ~1ms
+- **Lap number OCR** (tesserocr): ~2ms per frame
+- **Lap time OCR** (pytesseract fallback): ~50ms per transition (only when lap changes)
+
+**Total per-frame processing**: ~5-10ms (can process 100-200 FPS)

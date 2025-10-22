@@ -305,3 +305,4 @@ gear = gear_matcher.recognize_digit(gear_roi)
 **Status**: Template matching is now the default for lap numbers. OCR is only used for lap times at transitions. Future speed/gear detection will also use templates!
 
 
+
