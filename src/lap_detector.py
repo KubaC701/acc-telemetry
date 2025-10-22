@@ -47,9 +47,11 @@ class LapDetector:
         # Initialize template matcher for lap numbers
         self.lap_matcher = TemplateMatcher(template_dir)
         
-        # Cache for lap number
+        # Cache for lap number with temporal smoothing
         self._last_valid_lap_number: Optional[int] = None
         self._last_valid_lap_time: Optional[str] = None
+        self._lap_number_history: list = []  # Track recent detections for stability
+        self._history_size: int = 5  # Number of frames to track
         
         # Performance statistics
         self._enable_performance_stats = enable_performance_stats
@@ -109,17 +111,72 @@ class LapDetector:
         if lap_number is not None:
             # Validate: lap numbers should be reasonable (1-999)
             if 1 <= lap_number <= 999:
-                # Additional validation: lap number should not jump by more than 1
-                if self._last_valid_lap_number is not None:
-                    if abs(lap_number - self._last_valid_lap_number) > 1:
-                        # Suspicious jump, keep previous value
-                        return self._last_valid_lap_number
+                # Add to history for temporal smoothing
+                self._lap_number_history.append(lap_number)
+                if len(self._lap_number_history) > self._history_size:
+                    self._lap_number_history.pop(0)
                 
-                self._last_valid_lap_number = lap_number
-                return lap_number
+                # Use majority voting from recent history to filter out noise
+                smoothed_lap = self._get_smoothed_lap_number()
+                
+                if smoothed_lap is not None:
+                    # Additional validation: lap number should not decrease (except for resets)
+                    # or jump by more than 1
+                    if self._last_valid_lap_number is not None:
+                        lap_diff = smoothed_lap - self._last_valid_lap_number
+                        
+                        # Allow: no change, +1, or large jump (session reset)
+                        if lap_diff == 0:
+                            return self._last_valid_lap_number
+                        elif lap_diff == 1:
+                            # Normal lap progression
+                            self._last_valid_lap_number = smoothed_lap
+                            return smoothed_lap
+                        elif lap_diff > 1:
+                            # Large jump - possible session reset, accept it
+                            self._last_valid_lap_number = smoothed_lap
+                            return smoothed_lap
+                        else:
+                            # Backward jump (lap_diff < 0) - reject, likely misdetection
+                            # Keep previous value
+                            return self._last_valid_lap_number
+                    else:
+                        # First detection
+                        self._last_valid_lap_number = smoothed_lap
+                        return smoothed_lap
         
         # Return last known good value
         return self._last_valid_lap_number
+    
+    def _get_smoothed_lap_number(self) -> Optional[int]:
+        """
+        Apply majority voting to recent lap number detections to filter out noise.
+        
+        This prevents oscillation between two values (e.g., 10 vs 11, 20 vs 21).
+        If the history shows [10, 11, 10, 11, 10], we need to determine which is correct.
+        
+        Returns:
+            Most common lap number in recent history, or None if history is empty
+        """
+        if not self._lap_number_history:
+            return None
+        
+        # Count occurrences of each lap number
+        from collections import Counter
+        lap_counts = Counter(self._lap_number_history)
+        
+        # Get the most common lap number
+        most_common = lap_counts.most_common(1)[0]
+        lap_number = most_common[0]
+        count = most_common[1]
+        
+        # Require at least 60% agreement (3 out of 5 frames)
+        # This prevents flip-flopping but allows genuine transitions
+        if count >= max(3, len(self._lap_number_history) * 0.6):
+            return lap_number
+        
+        # Not enough consensus, return None to keep previous value
+        return None
     
     def extract_last_lap_time(self, frame: np.ndarray) -> Optional[str]:
         """

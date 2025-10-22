@@ -247,7 +247,8 @@ class TemplateMatcher:
             result = cv2.matchTemplate(binary, template, cv2.TM_CCOEFF_NORMED)
             
             # Find all matches above threshold
-            threshold = 0.6
+            # Higher threshold = more strict matching = fewer false positives
+            threshold = 0.65  # Increased from 0.6 to reduce false matches
             locations = np.where(result >= threshold)
             
             for y, x in zip(*locations):
@@ -263,21 +264,23 @@ class TemplateMatcher:
         # Remove duplicate detections at similar x positions
         # (same digit might match multiple times at nearby positions)
         filtered_matches = []
+        min_distance = 8  # Minimum x-distance between distinct digits (reduced from 10)
+        
         for i, (x, digit, conf) in enumerate(matches):
             # Check if this is too close to previous match
-            if filtered_matches and abs(x - filtered_matches[-1][0]) < 10:
+            if filtered_matches and abs(x - filtered_matches[-1][0]) < min_distance:
                 # Keep the one with higher confidence
                 if conf > filtered_matches[-1][2]:
                     filtered_matches[-1] = (x, digit, conf)
             else:
                 filtered_matches.append((x, digit, conf))
         
-        # Limit to max_digits
+        # Limit to max_digits and keep highest confidence matches
         if len(filtered_matches) > max_digits:
             # Keep the max_digits with highest confidence
             filtered_matches.sort(key=lambda m: m[2], reverse=True)
             filtered_matches = filtered_matches[:max_digits]
-            # Re-sort by position
+            # Re-sort by position for correct digit order
             filtered_matches.sort(key=lambda m: m[0])
         
         # Build number from left to right
