@@ -208,6 +208,68 @@ class TelemetryExtractor:
         
         return max(-1.0, min(1.0, normalized_position))
     
+    @staticmethod
+    def extract_tc_active(roi_image: np.ndarray) -> int:
+        """
+        Detect if traction control (TC) is active by checking for yellow/orange color in throttle bar.
+        TC activation causes the throttle bar to change from green to yellow/orange.
+        
+        Args:
+            roi_image: Cropped image of the throttle bar
+            
+        Returns:
+            1 if TC is active (yellow/orange detected), 0 otherwise
+        """
+        if roi_image is None or roi_image.size == 0:
+            return 0
+        
+        # Convert to HSV for color detection
+        hsv = cv2.cvtColor(roi_image, cv2.COLOR_BGR2HSV)
+        
+        # Yellow/Orange range (same as used in extract_bar_percentage for TC detection)
+        lower_yellow = np.array([15, 100, 100])
+        upper_yellow = np.array([35, 255, 255])
+        mask_yellow = cv2.inRange(hsv, lower_yellow, upper_yellow)
+        
+        # Count yellow/orange pixels
+        yellow_pixel_count = np.count_nonzero(mask_yellow)
+        
+        # Threshold: need at least 50 pixels to confirm TC is active (avoid noise)
+        min_pixels_threshold = 50
+        
+        return 1 if yellow_pixel_count >= min_pixels_threshold else 0
+    
+    @staticmethod
+    def extract_abs_active(roi_image: np.ndarray) -> int:
+        """
+        Detect if ABS is active by checking for orange/yellow color in brake bar.
+        ABS activation causes the brake bar to change from red to orange/yellow.
+        
+        Args:
+            roi_image: Cropped image of the brake bar
+            
+        Returns:
+            1 if ABS is active (orange detected), 0 otherwise
+        """
+        if roi_image is None or roi_image.size == 0:
+            return 0
+        
+        # Convert to HSV for color detection
+        hsv = cv2.cvtColor(roi_image, cv2.COLOR_BGR2HSV)
+        
+        # Orange/Yellow range (same as used in extract_bar_percentage for ABS detection)
+        lower_orange = np.array([10, 100, 100])
+        upper_orange = np.array([40, 255, 255])
+        mask_orange = cv2.inRange(hsv, lower_orange, upper_orange)
+        
+        # Count orange pixels
+        orange_pixel_count = np.count_nonzero(mask_orange)
+        
+        # Threshold: need at least 50 pixels to confirm ABS is active (avoid noise)
+        min_pixels_threshold = 50
+        
+        return 1 if orange_pixel_count >= min_pixels_threshold else 0
+    
     def extract_frame_telemetry(self, roi_dict: Dict[str, np.ndarray]) -> Dict[str, float]:
         """
         Extract all telemetry values from a frame's ROI images.
@@ -216,11 +278,13 @@ class TelemetryExtractor:
             roi_dict: Dictionary with 'throttle', 'brake', 'steering' ROI images
             
         Returns:
-            Dictionary with extracted values
+            Dictionary with extracted values including TC and ABS activation status
         """
         return {
             'throttle': self.extract_bar_percentage(roi_dict['throttle'], 'green', 'horizontal'),
             'brake': self.extract_bar_percentage(roi_dict['brake'], 'red', 'horizontal'),
-            'steering': self.extract_steering_position(roi_dict['steering'])
+            'steering': self.extract_steering_position(roi_dict['steering']),
+            'tc_active': self.extract_tc_active(roi_dict['throttle']),
+            'abs_active': self.extract_abs_active(roi_dict['brake'])
         }
 

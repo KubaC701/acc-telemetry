@@ -75,7 +75,7 @@ def main():
     total_start_time = time.time()
     
     # Configuration
-    VIDEO_PATH = './test-acc.mp4'  # Full race video for testing
+    VIDEO_PATH = './input_video.mp4'  # Full race video for testing
     CONFIG_PATH = 'config/roi_config.yaml'
     
     print("=" * 60)
@@ -190,7 +190,9 @@ def main():
                 'gear': gear,
                 'throttle': telemetry['throttle'],
                 'brake': telemetry['brake'],
-                'steering': telemetry['steering']
+                'steering': telemetry['steering'],
+                'tc_active': telemetry['tc_active'],
+                'abs_active': telemetry['abs_active']
             })
             perf_tracker.record('data_storage', time.time() - storage_start)
             
@@ -273,6 +275,8 @@ def main():
     print(f"   Avg Throttle: {summary['avg_throttle']:.1f}% (max: {summary['max_throttle']:.1f}%)")
     print(f"   Avg Brake: {summary['avg_brake']:.1f}% (max: {summary['max_brake']:.1f}%)")
     print(f"   Avg Steering: {summary['avg_steering_abs']:.2f} (range: {summary['max_steering_left']:.2f} to {summary['max_steering_right']:.2f})")
+    print(f"   TC Active: {summary['tc_active_percentage']:.1f}% of time ({summary['tc_active_frames']} frames)")
+    print(f"   ABS Active: {summary['abs_active_percentage']:.1f}% of time ({summary['abs_active_frames']} frames)")
     
     # Display lap summary if available
     if summary.get('total_laps', 0) > 0:

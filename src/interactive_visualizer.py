@@ -57,15 +57,15 @@ class InteractiveTelemetryVisualizer:
         return str(filepath)
     
     def plot_telemetry(self, df: pd.DataFrame, filename: Optional[str] = None, 
-                       title: str = 'ACC Telemetry Analysis') -> str:
+                       title: str = 'ACC Telemetry Analysis', use_subplots: bool = False) -> str:
         """
         Create an interactive multi-panel time-series graph of telemetry data using Plotly.
         
         Features:
         - Interactive zoom (click and drag to zoom into regions)
         - Pan (drag while zoomed)
-        - Hover tooltips (exact values at any point)
-        - Synchronized x-axis across all three plots
+        - Unified hover tooltips showing ALL values at cursor position
+        - Synchronized x-axis across all plots
         - Range slider for quick navigation
         - Export controls (download as PNG)
         
@@ -73,6 +73,8 @@ class InteractiveTelemetryVisualizer:
             df: DataFrame with telemetry data (columns: time, throttle, brake, steering)
             filename: Optional custom filename (will be .html)
             title: Graph title
+            use_subplots: If True, use traditional subplots (separate panels). 
+                         If False (default), use single plot with multiple y-axes for unified tooltips.
             
         Returns:
             Path to saved HTML file
@@ -87,13 +89,22 @@ class InteractiveTelemetryVisualizer:
         
         filepath = self.output_dir / filename
         
-        # Create figure with 5 subplots (shared x-axis for synchronized zooming)
+        if use_subplots:
+            # Traditional subplot approach (separate panels, no unified tooltip)
+            return self._plot_telemetry_subplots(df, filepath, title)
+        else:
+            # Single plot with multiple y-axes (unified tooltip showing all values)
+            return self._plot_telemetry_unified(df, filepath, title)
+    
+    def _plot_telemetry_subplots(self, df: pd.DataFrame, filepath: Path, title: str) -> str:
+        """Create telemetry visualization using traditional subplots (separate panels)."""
+        # Create figure with 7 subplots (shared x-axis for synchronized zooming)
         fig = make_subplots(
-            rows=5, cols=1,
+            rows=7, cols=1,
             shared_xaxes=True,
-            vertical_spacing=0.05,
-            subplot_titles=('Throttle Input', 'Brake Input', 'Steering Input', 'Speed', 'Gear'),
-            row_heights=[0.20, 0.20, 0.20, 0.20, 0.20]
+            vertical_spacing=0.03,
+            subplot_titles=('Throttle Input', 'Brake Input', 'Steering Input', 'Speed', 'Gear', 'Traction Control (TC)', 'ABS'),
+            row_heights=[0.14, 0.14, 0.14, 0.14, 0.14, 0.14, 0.14]
         )
         
         # ===== THROTTLE PLOT (Row 1) =====
@@ -175,6 +186,38 @@ class InteractiveTelemetryVisualizer:
             row=5, col=1
         )
         
+        # ===== TC PLOT (Row 6) =====
+        # Binary indicator for traction control activation
+        fig.add_trace(
+            go.Scatter(
+                x=df['time'],
+                y=df['tc_active'],
+                mode='lines',
+                name='TC Active',
+                line=dict(color='#FFA500', width=2, shape='hv'),  # Orange color, step effect
+                fill='tozeroy',
+                fillcolor='rgba(255, 165, 0, 0.3)',
+                hovertemplate='<b>TC Active</b><br>Time: %{x:.2f}s<br>Status: %{y:.0f}<extra></extra>'
+            ),
+            row=6, col=1
+        )
+        
+        # ===== ABS PLOT (Row 7) =====
+        # Binary indicator for ABS activation
+        fig.add_trace(
+            go.Scatter(
+                x=df['time'],
+                y=df['abs_active'],
+                mode='lines',
+                name='ABS Active',
+                line=dict(color='#FF8C00', width=2, shape='hv'),  # Dark orange color, step effect
+                fill='tozeroy',
+                fillcolor='rgba(255, 140, 0, 0.3)',
+                hovertemplate='<b>ABS Active</b><br>Time: %{x:.2f}s<br>Status: %{y:.0f}<extra></extra>'
+            ),
+            row=7, col=1
+        )
+        
         # ===== UPDATE AXES =====
         # Throttle Y-axis
         fig.update_yaxes(
@@ -216,11 +259,27 @@ class InteractiveTelemetryVisualizer:
             row=5, col=1
         )
         
+        # TC Y-axis
+        fig.update_yaxes(
+            title_text="TC", 
+            range=[-0.1, 1.2],
+            gridcolor='rgba(128, 128, 128, 0.2)',
+            row=6, col=1
+        )
+        
+        # ABS Y-axis
+        fig.update_yaxes(
+            title_text="ABS", 
+            range=[-0.1, 1.2],
+            gridcolor='rgba(128, 128, 128, 0.2)',
+            row=7, col=1
+        )
+        
         # X-axis (only on bottom plot)
         fig.update_xaxes(
             title_text="Time (seconds)",
             gridcolor='rgba(128, 128, 128, 0.2)',
-            row=5, col=1
+            row=7, col=1
         )
         
         # ===== LAP VISUALIZATION FEATURES =====
@@ -239,8 +298,8 @@ class InteractiveTelemetryVisualizer:
                     transition_time = row['time']
                     lap_num = int(row['lap_number'])
                     
-                    # Add vertical line on all five subplots
-                    for subplot_row in [1, 2, 3, 4, 5]:
+                    # Add vertical line on all seven subplots
+                    for subplot_row in [1, 2, 3, 4, 5, 6, 7]:
                         fig.add_vline(
                             x=transition_time,
                             line_dash="dash",
@@ -281,19 +340,269 @@ class InteractiveTelemetryVisualizer:
                 xanchor="right",
                 x=1
             ),
-            hovermode='x unified',  # Synchronized hover across all subplots - shows vertical line and all values at same timestamp
+            hovermode='x',  # Show all values at same x-position
             template='plotly_white',
             # Add range slider on bottom plot for easy navigation
-            xaxis5=dict(
+            xaxis7=dict(
                 rangeslider=dict(visible=True, thickness=0.05),
                 type='linear'
             )
         )
         
-        # Configure hover behavior for synchronized tooltips across all subplots
-        # This ensures that hovering over any graph shows data for all graphs at that timestamp
-        fig.update_traces(
-            xaxis='x',  # All traces reference the same x-axis for synchronized behavior
+        # Save as interactive HTML
+        fig.write_html(
+            filepath,
+            config={
+                'displayModeBar': True,
+                'displaylogo': False,
+                'modeBarButtonsToAdd': ['drawline', 'drawopenpath', 'eraseshape'],
+                'modeBarButtonsToRemove': ['lasso2d', 'select2d'],
+                'toImageButtonOptions': {
+                    'format': 'png',
+                    'filename': 'telemetry_export',
+                    'height': 1080,
+                    'width': 1920,
+                    'scale': 2
+                }
+            }
+        )
+        
+        return str(filepath)
+    
+    def _plot_telemetry_unified(self, df: pd.DataFrame, filepath: Path, title: str) -> str:
+        """
+        Create telemetry visualization using single plot with multiple y-axes.
+        This enables TRUE unified hover tooltip showing ALL values at once.
+        """
+        # Create a single figure (not subplots)
+        fig = go.Figure()
+        
+        # Add all traces to the same plot, each with its own y-axis
+        # The key is using yaxis='y', yaxis2='y2', etc. and positioning them vertically
+        
+        # ===== THROTTLE (primary y-axis, domain: top 20%) =====
+        fig.add_trace(go.Scatter(
+            x=df['time'],
+            y=df['throttle'],
+            mode='lines',
+            name='Throttle',
+            line=dict(color='#00FF00', width=2),
+            fill='tozeroy',
+            fillcolor='rgba(0, 255, 0, 0.3)',
+            yaxis='y1',
+            hovertemplate='Throttle: %{y:.1f}%<extra></extra>'
+        ))
+        
+        # ===== BRAKE (y-axis 2, domain: 20-40%) =====
+        fig.add_trace(go.Scatter(
+            x=df['time'],
+            y=df['brake'],
+            mode='lines',
+            name='Brake',
+            line=dict(color='#FF0000', width=2),
+            fill='tozeroy',
+            fillcolor='rgba(255, 0, 0, 0.3)',
+            yaxis='y2',
+            hovertemplate='Brake: %{y:.1f}%<extra></extra>'
+        ))
+        
+        # ===== STEERING (y-axis 3, domain: 40-60%) =====
+        fig.add_trace(go.Scatter(
+            x=df['time'],
+            y=df['steering'],
+            mode='lines',
+            name='Steering',
+            line=dict(color='#1E90FF', width=2),
+            yaxis='y3',
+            hovertemplate='Steering: %{y:.3f}<extra></extra>'
+        ))
+        
+        # Add zero line for steering
+        fig.add_hline(
+            y=0, 
+            line_dash="dash", 
+            line_color="gray", 
+            opacity=0.5,
+            yref='y3'
+        )
+        
+        # ===== SPEED (y-axis 4, domain: 60-80%) =====
+        fig.add_trace(go.Scatter(
+            x=df['time'],
+            y=df['speed'],
+            mode='lines',
+            name='Speed',
+            line=dict(color='#FF8C00', width=2),
+            yaxis='y4',
+            hovertemplate='Speed: %{y:.0f} km/h<extra></extra>'
+        ))
+        
+        # ===== GEAR (y-axis 5, domain: to be adjusted) =====
+        fig.add_trace(go.Scatter(
+            x=df['time'],
+            y=df['gear'],
+            mode='lines',
+            name='Gear',
+            line=dict(color='#9B59B6', width=2, shape='hv'),
+            yaxis='y5',
+            hovertemplate='Gear: %{y:.0f}<extra></extra>'
+        ))
+        
+        # ===== TC (y-axis 6, domain: to be adjusted) =====
+        fig.add_trace(go.Scatter(
+            x=df['time'],
+            y=df['tc_active'],
+            mode='lines',
+            name='TC Active',
+            line=dict(color='#FFA500', width=2, shape='hv'),
+            fill='tozeroy',
+            fillcolor='rgba(255, 165, 0, 0.3)',
+            yaxis='y6',
+            hovertemplate='TC: %{y:.0f}<extra></extra>'
+        ))
+        
+        # ===== ABS (y-axis 7, domain: to be adjusted) =====
+        fig.add_trace(go.Scatter(
+            x=df['time'],
+            y=df['abs_active'],
+            mode='lines',
+            name='ABS Active',
+            line=dict(color='#FF8C00', width=2, shape='hv'),
+            fill='tozeroy',
+            fillcolor='rgba(255, 140, 0, 0.3)',
+            yaxis='y7',
+            hovertemplate='ABS: %{y:.0f}<extra></extra>'
+        ))
+        
+        # ===== ADD LAP SEPARATORS =====
+        if 'lap_number' in df.columns:
+            valid_laps_df = df[df['lap_number'].notna()]
+            
+            if not valid_laps_df.empty:
+                lap_transitions = valid_laps_df[
+                    valid_laps_df['lap_number'] != valid_laps_df['lap_number'].shift()
+                ]
+                
+                for idx, row in lap_transitions.iterrows():
+                    transition_time = row['time']
+                    lap_num = int(row['lap_number'])
+                    
+                    # Add vertical line (will span entire plot)
+                    fig.add_vline(
+                        x=transition_time,
+                        line_dash="dash",
+                        line_color="rgba(128, 128, 128, 0.5)",
+                        line_width=1
+                    )
+                    
+                    # Add lap annotation at top
+                    fig.add_annotation(
+                        x=transition_time,
+                        y=1.0,
+                        yref='paper',  # Use paper coordinates (0-1 range)
+                        text=f"Lap {lap_num}",
+                        showarrow=False,
+                        font=dict(size=10, color='#34495E'),
+                        bgcolor='rgba(255, 255, 255, 0.7)',
+                        bordercolor='rgba(128, 128, 128, 0.3)',
+                        borderwidth=1,
+                        borderpad=3
+                    )
+        
+        # ===== CONFIGURE LAYOUT WITH MULTIPLE Y-AXES =====
+        fig.update_layout(
+            title={
+                'text': title,
+                'x': 0.5,
+                'xanchor': 'center',
+                'font': {'size': 20, 'family': 'Arial, sans-serif', 'color': '#2C3E50'}
+            },
+            height=900,
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
+            ),
+            hovermode='x unified',  # THIS IS THE KEY! Works with single plot + multiple y-axes
+            template='plotly_white',
+            
+            # Configure the main x-axis with range slider
+            xaxis=dict(
+                title='Time (seconds)',
+                domain=[0, 1],
+                rangeslider=dict(visible=True, thickness=0.05),
+                gridcolor='rgba(128, 128, 128, 0.2)'
+            ),
+            
+            # Configure 7 separate y-axes, each with its own vertical domain
+            # Domain format: [bottom, top] as fraction of plot height (0-1)
+            # Each subplot gets ~13% of space with ~1% gap
+            
+            # Y1 - Throttle (top 13% of plot)
+            yaxis1=dict(
+                title='Throttle (%)',
+                range=[-5, 105],
+                domain=[0.87, 1.0],
+                gridcolor='rgba(128, 128, 128, 0.2)',
+                anchor='x'
+            ),
+            
+            # Y2 - Brake (73-86% of plot)
+            yaxis2=dict(
+                title='Brake (%)',
+                range=[-5, 105],
+                domain=[0.73, 0.86],
+                gridcolor='rgba(128, 128, 128, 0.2)',
+                anchor='x'
+            ),
+            
+            # Y3 - Steering (59-72% of plot)
+            yaxis3=dict(
+                title='Steering',
+                range=[-1.1, 1.1],
+                domain=[0.59, 0.72],
+                gridcolor='rgba(128, 128, 128, 0.2)',
+                anchor='x'
+            ),
+            
+            # Y4 - Speed (45-58% of plot)
+            yaxis4=dict(
+                title='Speed (km/h)',
+                range=[0, 350],
+                domain=[0.45, 0.58],
+                gridcolor='rgba(128, 128, 128, 0.2)',
+                anchor='x'
+            ),
+            
+            # Y5 - Gear (31-44% of plot)
+            yaxis5=dict(
+                title='Gear',
+                range=[0, 7],
+                domain=[0.31, 0.44],
+                gridcolor='rgba(128, 128, 128, 0.2)',
+                anchor='x'
+            ),
+            
+            # Y6 - TC (17-30% of plot)
+            yaxis6=dict(
+                title='TC',
+                range=[-0.1, 1.2],
+                domain=[0.17, 0.30],
+                gridcolor='rgba(128, 128, 128, 0.2)',
+                anchor='x'
+            ),
+            
+            # Y7 - ABS (bottom 3-16% of plot, leaving space for x-axis and range slider)
+            yaxis7=dict(
+                title='ABS',
+                range=[-0.1, 1.2],
+                domain=[0.03, 0.16],
+                gridcolor='rgba(128, 128, 128, 0.2)',
+                anchor='x'
+            )
         )
         
         # Save as interactive HTML
@@ -459,6 +768,23 @@ class InteractiveTelemetryVisualizer:
         else:
             summary['avg_speed'] = 0.0
             summary['max_speed'] = 0.0
+        
+        # Add TC and ABS statistics if columns exist
+        if 'tc_active' in df.columns:
+            tc_frames = df['tc_active'].sum()
+            summary['tc_active_frames'] = int(tc_frames)
+            summary['tc_active_percentage'] = (tc_frames / len(df)) * 100 if len(df) > 0 else 0.0
+        else:
+            summary['tc_active_frames'] = 0
+            summary['tc_active_percentage'] = 0.0
+        
+        if 'abs_active' in df.columns:
+            abs_frames = df['abs_active'].sum()
+            summary['abs_active_frames'] = int(abs_frames)
+            summary['abs_active_percentage'] = (abs_frames / len(df)) * 100 if len(df) > 0 else 0.0
+        else:
+            summary['abs_active_frames'] = 0
+            summary['abs_active_percentage'] = 0.0
         
         # Add lap-based statistics if lap_number column exists
         if 'lap_number' in df.columns:
@@ -639,13 +965,10 @@ class InteractiveTelemetryVisualizer:
                 xanchor="right",
                 x=0.99
             ),
-            hovermode='x unified',  # Synchronized hover - shows all lap data at same timestamp
+            hovermode='x unified',
             template='plotly_white',
             xaxis3=dict(rangeslider=dict(visible=True, thickness=0.05))
         )
-        
-        # Configure synchronized hover tooltips
-        fig.update_traces(xaxis='x')
         
         fig.write_html(filepath)
         
