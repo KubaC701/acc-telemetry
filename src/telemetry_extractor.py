@@ -214,11 +214,14 @@ class TelemetryExtractor:
         Detect if traction control (TC) is active by checking for yellow/orange color in throttle bar.
         TC activation causes the throttle bar to change from green to yellow/orange.
         
+        Important: This method requires both yellow pixels AND an actual throttle bar to be present
+        to avoid false positives from ABS glow bleeding into the throttle ROI.
+        
         Args:
             roi_image: Cropped image of the throttle bar
             
         Returns:
-            1 if TC is active (yellow/orange detected), 0 otherwise
+            1 if TC is active (yellow/orange detected with throttle present), 0 otherwise
         """
         if roi_image is None or roi_image.size == 0:
             return 0
@@ -231,13 +234,25 @@ class TelemetryExtractor:
         upper_yellow = np.array([35, 255, 255])
         mask_yellow = cv2.inRange(hsv, lower_yellow, upper_yellow)
         
-        # Count yellow/orange pixels
+        # Green range (normal throttle color)
+        lower_green = np.array([35, 50, 50])
+        upper_green = np.array([85, 255, 255])
+        mask_green = cv2.inRange(hsv, lower_green, upper_green)
+        
+        # Count pixels
         yellow_pixel_count = np.count_nonzero(mask_yellow)
+        green_pixel_count = np.count_nonzero(mask_green)
+        total_throttle_pixels = green_pixel_count + yellow_pixel_count
         
-        # Threshold: need at least 50 pixels to confirm TC is active (avoid noise)
-        min_pixels_threshold = 50
+        # TC is active if:
+        # 1. Yellow pixels present (>= 50)
+        # 2. Total bar pixels present (>= 150) - ensures it's a real bar, not just glow
+        # This prevents false positives from ABS glow bleeding into throttle ROI
+        yellow_threshold = 50
+        total_pixels_threshold = 150
         
-        return 1 if yellow_pixel_count >= min_pixels_threshold else 0
+        return 1 if (yellow_pixel_count >= yellow_threshold and 
+                    total_throttle_pixels >= total_pixels_threshold) else 0
     
     @staticmethod
     def extract_abs_active(roi_image: np.ndarray) -> int:
