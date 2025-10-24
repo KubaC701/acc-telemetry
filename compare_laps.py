@@ -1,6 +1,12 @@
 """
-Lap Comparison Tool - Compare telemetry from multiple laps
+Time-Based Lap Comparison Tool - Compare telemetry from multiple separate lap files
+
+This tool compares laps by TIME alignment (both laps start at t=0).
+For POSITION-based comparison (align by track position %), use compare_laps_by_position.py
+
 Usage: python compare_laps.py lap1.csv lap2.csv lap3.csv
+
+Each CSV file should be a separate lap recording.
 """
 
 import sys

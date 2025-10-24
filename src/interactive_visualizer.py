@@ -4,6 +4,7 @@ Provides interactive zoom, pan, hover tooltips, and multi-lap comparison capabil
 """
 
 import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime
@@ -983,6 +984,436 @@ class InteractiveTelemetryVisualizer:
         )
         
         fig.write_html(filepath)
+        
+        return str(filepath)
+    
+    def _resample_lap_by_position(self, lap_df: pd.DataFrame, position_step: float = 0.5) -> pd.DataFrame:
+        """
+        Resample a single lap's telemetry data at fixed track position intervals.
+        
+        This allows position-based comparison between laps by ensuring both laps
+        have data points at the same track positions (e.g., 0%, 0.5%, 1.0%, ..., 100%).
+        
+        Args:
+            lap_df: DataFrame for a single lap with track_position column
+            position_step: Interval between position samples (default: 0.5% = 200 samples per lap)
+        
+        Returns:
+            Resampled DataFrame with columns: position, throttle, brake, steering, speed, time, frame
+        """
+        # Filter out rows with missing track_position
+        valid_df = lap_df[lap_df['track_position'].notna()].copy()
+        
+        if valid_df.empty:
+            return pd.DataFrame()
+        
+        # Sort by track_position to ensure interpolation works correctly
+        valid_df = valid_df.sort_values('track_position')
+        
+        # Create target positions from 0 to 100% at fixed intervals
+        target_positions = np.arange(0.0, 100.0 + position_step, position_step)
+        
+        # Interpolate each telemetry channel at target positions
+        resampled_data = {
+            'position': target_positions,
+            'throttle': np.interp(target_positions, valid_df['track_position'], valid_df['throttle']),
+            'brake': np.interp(target_positions, valid_df['track_position'], valid_df['brake']),
+            'steering': np.interp(target_positions, valid_df['track_position'], valid_df['steering']),
+            'time': np.interp(target_positions, valid_df['track_position'], valid_df['time']),
+            'frame': np.interp(target_positions, valid_df['track_position'], valid_df['frame'])
+        }
+        
+        # Add speed if available
+        if 'speed' in valid_df.columns:
+            resampled_data['speed'] = np.interp(target_positions, valid_df['track_position'], valid_df['speed'])
+        
+        return pd.DataFrame(resampled_data)
+    
+    def _calculate_time_delta(self, lap_a_df: pd.DataFrame, lap_b_df: pd.DataFrame, fps: float = 30.0) -> np.ndarray:
+        """
+        Calculate time delta between two laps at each track position.
+        
+        Delta = time_lap_a - time_lap_b
+        - Positive delta: Lap A is slower (behind) at this position
+        - Negative delta: Lap A is faster (ahead) at this position
+        
+        Args:
+            lap_a_df: Resampled DataFrame for lap A (baseline)
+            lap_b_df: Resampled DataFrame for lap B (comparison)
+            fps: Video frames per second (for frame-based calculation)
+        
+        Returns:
+            Array of time deltas in seconds at each position point
+        """
+        # Use time-based calculation (more accurate than frame-based)
+        # Subtract the starting time to get relative lap times
+        lap_a_relative_time = lap_a_df['time'].values - lap_a_df['time'].values[0]
+        lap_b_relative_time = lap_b_df['time'].values - lap_b_df['time'].values[0]
+        
+        # Delta = how much slower lap A is compared to lap B at each position
+        time_delta = lap_a_relative_time - lap_b_relative_time
+        
+        return time_delta
+    
+    def plot_position_based_comparison(self, df: pd.DataFrame, filename: Optional[str] = None,
+                                      position_step: float = 0.5, fps: float = 30.0) -> str:
+        """
+        Create an interactive position-based lap comparison with dropdown selector.
+        
+        This visualization aligns laps by track position (not time) to enable
+        direct comparison of driving technique at each point around the track.
+        
+        Features:
+        - Dropdown menu to select which two laps to compare
+        - 5 synchronized plots (x-axis = Track Position %):
+          1. Throttle overlay
+          2. Brake overlay
+          3. Steering overlay
+          4. Speed overlay
+          5. Time Delta (shows where time is gained/lost)
+        - Interactive zoom/pan
+        - Unified hover tooltips
+        
+        Args:
+            df: DataFrame with telemetry data including lap_number and track_position columns
+            filename: Optional custom filename
+            position_step: Interval between position samples (default: 0.5%)
+            fps: Video frames per second for time delta calculation
+        
+        Returns:
+            Path to saved HTML file
+        """
+        # Validate required columns
+        required_cols = ['lap_number', 'track_position', 'throttle', 'brake', 'steering', 'time', 'frame']
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        
+        if missing_cols:
+            raise ValueError(f"DataFrame missing required columns: {missing_cols}")
+        
+        # Filter to only rows with valid lap_number and track_position
+        valid_df = df[(df['lap_number'].notna()) & (df['track_position'].notna())].copy()
+        
+        if valid_df.empty:
+            raise ValueError("No valid data with both lap_number and track_position")
+        
+        # Get unique laps
+        unique_laps = sorted(valid_df['lap_number'].unique())
+        
+        if len(unique_laps) < 2:
+            raise ValueError(f"Need at least 2 laps for comparison, found {len(unique_laps)}")
+        
+        print(f"\n📊 Generating position-based lap comparison...")
+        print(f"   Found {len(unique_laps)} laps: {unique_laps}")
+        
+        # Generate all pairwise comparisons (lap_a vs lap_b where a < b)
+        comparison_pairs = []
+        for i, lap_a in enumerate(unique_laps):
+            for lap_b in unique_laps[i+1:]:
+                comparison_pairs.append((int(lap_a), int(lap_b)))
+        
+        print(f"   Generating {len(comparison_pairs)} pairwise comparisons...")
+        
+        # Resample all laps by position
+        print(f"   Resampling laps at {position_step}% intervals...")
+        resampled_laps = {}
+        for lap_num in unique_laps:
+            lap_df = valid_df[valid_df['lap_number'] == lap_num]
+            resampled = self._resample_lap_by_position(lap_df, position_step)
+            
+            if not resampled.empty:
+                resampled_laps[int(lap_num)] = resampled
+                print(f"      Lap {int(lap_num)}: {len(resampled)} position points")
+        
+        # Create figure with 5 subplots
+        fig = make_subplots(
+            rows=5, cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.03,
+            subplot_titles=('Throttle Input', 'Brake Input', 'Steering Input', 'Speed', 'Time Delta'),
+            row_heights=[0.18, 0.18, 0.18, 0.18, 0.28]
+        )
+        
+        # Color palette for laps
+        colors = ['#00FF00', '#FF6B6B', '#4ECDC4', '#FFD93D', '#6C5CE7', '#FD79A8']
+        
+        # Track which traces belong to which comparison (for dropdown visibility control)
+        trace_visibility_map = []  # List of lists: [[comparison_0_traces], [comparison_1_traces], ...]
+        
+        # Generate traces for all comparisons
+        for comparison_idx, (lap_a, lap_b) in enumerate(comparison_pairs):
+            if lap_a not in resampled_laps or lap_b not in resampled_laps:
+                print(f"   ⚠️  Skipping comparison Lap {lap_a} vs {lap_b} (missing data)")
+                continue
+            
+            lap_a_data = resampled_laps[lap_a]
+            lap_b_data = resampled_laps[lap_b]
+            
+            # Calculate time delta
+            time_delta = self._calculate_time_delta(lap_a_data, lap_b_data, fps)
+            
+            # Determine colors
+            color_a = colors[0]  # Green for first lap
+            color_b = colors[1]  # Red for second lap
+            
+            # Track trace indices for this comparison
+            comparison_traces = []
+            
+            # Determine if these traces should be visible initially (only first comparison)
+            is_visible = (comparison_idx == 0)
+            
+            # === THROTTLE TRACES (Row 1) ===
+            # Lap A throttle
+            fig.add_trace(
+                go.Scatter(
+                    x=lap_a_data['position'],
+                    y=lap_a_data['throttle'],
+                    mode='lines',
+                    name=f'Lap {lap_a}',
+                    line=dict(color=color_a, width=2),
+                    legendgroup=f'comparison_{comparison_idx}',
+                    showlegend=True,
+                    visible=is_visible,
+                    hovertemplate=f'<b>Lap {lap_a}</b><br>Position: %{{x:.1f}}%<br>Throttle: %{{y:.1f}}%<extra></extra>'
+                ),
+                row=1, col=1
+            )
+            comparison_traces.append(len(fig.data) - 1)
+            
+            # Lap B throttle
+            fig.add_trace(
+                go.Scatter(
+                    x=lap_b_data['position'],
+                    y=lap_b_data['throttle'],
+                    mode='lines',
+                    name=f'Lap {lap_b}',
+                    line=dict(color=color_b, width=2),
+                    legendgroup=f'comparison_{comparison_idx}',
+                    showlegend=True,
+                    visible=is_visible,
+                    hovertemplate=f'<b>Lap {lap_b}</b><br>Position: %{{x:.1f}}%<br>Throttle: %{{y:.1f}}%<extra></extra>'
+                ),
+                row=1, col=1
+            )
+            comparison_traces.append(len(fig.data) - 1)
+            
+            # === BRAKE TRACES (Row 2) ===
+            fig.add_trace(
+                go.Scatter(
+                    x=lap_a_data['position'],
+                    y=lap_a_data['brake'],
+                    mode='lines',
+                    name=f'Lap {lap_a}',
+                    line=dict(color=color_a, width=2),
+                    legendgroup=f'comparison_{comparison_idx}',
+                    showlegend=False,
+                    visible=is_visible,
+                    hovertemplate=f'<b>Lap {lap_a}</b><br>Position: %{{x:.1f}}%<br>Brake: %{{y:.1f}}%<extra></extra>'
+                ),
+                row=2, col=1
+            )
+            comparison_traces.append(len(fig.data) - 1)
+            
+            fig.add_trace(
+                go.Scatter(
+                    x=lap_b_data['position'],
+                    y=lap_b_data['brake'],
+                    mode='lines',
+                    name=f'Lap {lap_b}',
+                    line=dict(color=color_b, width=2),
+                    legendgroup=f'comparison_{comparison_idx}',
+                    showlegend=False,
+                    visible=is_visible,
+                    hovertemplate=f'<b>Lap {lap_b}</b><br>Position: %{{x:.1f}}%<br>Brake: %{{y:.1f}}%<extra></extra>'
+                ),
+                row=2, col=1
+            )
+            comparison_traces.append(len(fig.data) - 1)
+            
+            # === STEERING TRACES (Row 3) ===
+            fig.add_trace(
+                go.Scatter(
+                    x=lap_a_data['position'],
+                    y=lap_a_data['steering'],
+                    mode='lines',
+                    name=f'Lap {lap_a}',
+                    line=dict(color=color_a, width=2),
+                    legendgroup=f'comparison_{comparison_idx}',
+                    showlegend=False,
+                    visible=is_visible,
+                    hovertemplate=f'<b>Lap {lap_a}</b><br>Position: %{{x:.1f}}%<br>Steering: %{{y:.3f}}<extra></extra>'
+                ),
+                row=3, col=1
+            )
+            comparison_traces.append(len(fig.data) - 1)
+            
+            fig.add_trace(
+                go.Scatter(
+                    x=lap_b_data['position'],
+                    y=lap_b_data['steering'],
+                    mode='lines',
+                    name=f'Lap {lap_b}',
+                    line=dict(color=color_b, width=2),
+                    legendgroup=f'comparison_{comparison_idx}',
+                    showlegend=False,
+                    visible=is_visible,
+                    hovertemplate=f'<b>Lap {lap_b}</b><br>Position: %{{x:.1f}}%<br>Steering: %{{y:.3f}}<extra></extra>'
+                ),
+                row=3, col=1
+            )
+            comparison_traces.append(len(fig.data) - 1)
+            
+            # === SPEED TRACES (Row 4) ===
+            if 'speed' in lap_a_data.columns and 'speed' in lap_b_data.columns:
+                fig.add_trace(
+                    go.Scatter(
+                        x=lap_a_data['position'],
+                        y=lap_a_data['speed'],
+                        mode='lines',
+                        name=f'Lap {lap_a}',
+                        line=dict(color=color_a, width=2),
+                        legendgroup=f'comparison_{comparison_idx}',
+                        showlegend=False,
+                        visible=is_visible,
+                        hovertemplate=f'<b>Lap {lap_a}</b><br>Position: %{{x:.1f}}%<br>Speed: %{{y:.0f}} km/h<extra></extra>'
+                    ),
+                    row=4, col=1
+                )
+                comparison_traces.append(len(fig.data) - 1)
+                
+                fig.add_trace(
+                    go.Scatter(
+                        x=lap_b_data['position'],
+                        y=lap_b_data['speed'],
+                        mode='lines',
+                        name=f'Lap {lap_b}',
+                        line=dict(color=color_b, width=2),
+                        legendgroup=f'comparison_{comparison_idx}',
+                        showlegend=False,
+                        visible=is_visible,
+                        hovertemplate=f'<b>Lap {lap_b}</b><br>Position: %{{x:.1f}}%<br>Speed: %{{y:.0f}} km/h<extra></extra>'
+                    ),
+                    row=4, col=1
+                )
+                comparison_traces.append(len(fig.data) - 1)
+            
+            # === TIME DELTA TRACE (Row 5) ===
+            # Color: green where lap A is faster (negative delta), red where lap A is slower (positive delta)
+            fig.add_trace(
+                go.Scatter(
+                    x=lap_a_data['position'],
+                    y=time_delta,
+                    mode='lines',
+                    name=f'Delta (Lap {lap_a} - Lap {lap_b})',
+                    line=dict(color='#9B59B6', width=2),
+                    fill='tozeroy',
+                    fillcolor='rgba(155, 89, 182, 0.3)',
+                    legendgroup=f'comparison_{comparison_idx}',
+                    showlegend=False,
+                    visible=is_visible,
+                    hovertemplate=f'<b>Time Delta</b><br>Position: %{{x:.1f}}%<br>Delta: %{{y:.3f}}s<br>(Lap {lap_a} - Lap {lap_b})<extra></extra>'
+                ),
+                row=5, col=1
+            )
+            comparison_traces.append(len(fig.data) - 1)
+            
+            # Store trace indices for this comparison
+            trace_visibility_map.append(comparison_traces)
+        
+        # Add zero line for steering and time delta
+        fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5, row=3, col=1)
+        fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5, row=5, col=1)
+        
+        # Update axes labels
+        fig.update_yaxes(title_text="Throttle (%)", range=[-5, 105], row=1, col=1)
+        fig.update_yaxes(title_text="Brake (%)", range=[-5, 105], row=2, col=1)
+        fig.update_yaxes(title_text="Steering", range=[-1.1, 1.1], row=3, col=1)
+        fig.update_yaxes(title_text="Speed (km/h)", range=[0, 350], row=4, col=1)
+        fig.update_yaxes(title_text="Time Delta (s)", row=5, col=1)
+        fig.update_xaxes(title_text="Track Position (%)", row=5, col=1)
+        
+        # Create dropdown menu buttons
+        dropdown_buttons = []
+        for comparison_idx, (lap_a, lap_b) in enumerate(comparison_pairs):
+            if lap_a not in resampled_laps or lap_b not in resampled_laps:
+                continue
+            
+            # Create visibility array: all False except for traces of this comparison
+            visibility = [False] * len(fig.data)
+            for trace_idx in trace_visibility_map[comparison_idx]:
+                visibility[trace_idx] = True
+            
+            dropdown_buttons.append({
+                'label': f'Lap {lap_a} vs Lap {lap_b}',
+                'method': 'update',
+                'args': [
+                    {'visible': visibility},
+                    {'title': f'Position-Based Lap Comparison: Lap {lap_a} vs Lap {lap_b}'}
+                ]
+            })
+        
+        # Update layout with dropdown
+        fig.update_layout(
+            title={
+                'text': f'Position-Based Lap Comparison: Lap {comparison_pairs[0][0]} vs Lap {comparison_pairs[0][1]}',
+                'x': 0.5,
+                'xanchor': 'center',
+                'font': {'size': 20, 'family': 'Arial, sans-serif', 'color': '#2C3E50'}
+            },
+            updatemenus=[{
+                'buttons': dropdown_buttons,
+                'direction': 'down',
+                'showactive': True,
+                'x': 0.02,
+                'xanchor': 'left',
+                'y': 1.15,
+                'yanchor': 'top',
+                'bgcolor': '#FFFFFF',
+                'bordercolor': '#CCCCCC',
+                'borderwidth': 1
+            }],
+            height=1100,
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.08,
+                xanchor="right",
+                x=0.98
+            ),
+            hovermode='x unified',
+            template='plotly_white',
+            xaxis5=dict(rangeslider=dict(visible=True, thickness=0.05))
+        )
+        
+        # Generate filename
+        if filename is None:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f'lap_comparison_position_{timestamp}.html'
+        
+        if not filename.endswith('.html'):
+            filename = filename.replace('.png', '.html')
+        
+        filepath = self.output_dir / filename
+        
+        # Save HTML
+        fig.write_html(
+            filepath,
+            config={
+                'displayModeBar': True,
+                'displaylogo': False,
+                'modeBarButtonsToAdd': ['drawline', 'drawopenpath', 'eraseshape'],
+                'modeBarButtonsToRemove': ['lasso2d', 'select2d'],
+                'toImageButtonOptions': {
+                    'format': 'png',
+                    'filename': 'lap_comparison_position',
+                    'height': 1200,
+                    'width': 1920,
+                    'scale': 2
+                }
+            }
+        )
+        
+        print(f"   ✅ Position-based comparison saved: {filepath}")
         
         return str(filepath)
 

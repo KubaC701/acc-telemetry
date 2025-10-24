@@ -8,14 +8,19 @@ This tool analyzes ACC gameplay videos frame-by-frame to extract:
 - **Throttle input** (0-100%)
 - **Brake input** (0-100%)
 - **Steering input** (-1.0 to +1.0)
+- **Speed** (km/h via OCR)
+- **Gear** (1-6 via OCR)
+- **Lap numbers** (via template matching)
+- **Track position** (0-100% via minimap analysis) 🆕
 
 And generates:
 - CSV data files for analysis
 - **Interactive HTML visualizations** with zoom, pan, and hover tooltips
+- **Position-based lap comparison** - see exactly where you gain/lose time 🆕
 - High-resolution graphs with multiple detail levels
 - Braking zone analysis
 - Throttle application analysis
-- Multi-lap comparison
+- Time-based lap comparison
 - Lap statistics
 
 ## 🚀 Quick Start
@@ -34,14 +39,17 @@ python main.py
 # 4. Generate detailed static analysis (optional)
 python generate_detailed_analysis.py
 
-# 5. Compare multiple laps (optional)
+# 5. Compare laps by time (optional - separate lap files)
 python compare_laps.py lap1.csv lap2.csv
+
+# 6. Compare laps by position (optional - single file with multiple laps)
+python compare_laps_by_position.py data/output/telemetry_YYYYMMDD_HHMMSS.csv
 ```
 
 ## 📊 Output Examples
 
 ### Interactive Visualization (NEW!)
-**Browser-based interactive graphs with Plotly** - [See full guide](INTERACTIVE_VISUALIZATION_GUIDE.md)
+**Browser-based interactive graphs with Plotly** - [See full guide](docs/INTERACTIVE_VISUALIZATION_GUIDE.md)
 
 Features:
 - 🔍 **Interactive zoom**: Click and drag to zoom into any region
@@ -53,6 +61,33 @@ Features:
 - 🌐 **Shareable**: Just send the HTML file - works in any browser
 
 **Output**: `telemetry_interactive_YYYYMMDD_HHMMSS.html` (open in browser)
+
+---
+
+### Position-Based Lap Comparison (NEW! 🆕)
+**Gold standard for racing analysis** - [See full guide](docs/POSITION_BASED_LAP_COMPARISON.md)
+
+Compare laps by **track position** instead of time to see exactly where you gain or lose time around the track!
+
+Features:
+- 🎯 **Position alignment**: Compare inputs at the same corners (not same time)
+- 📉 **Time delta plot**: Shows exactly where time is gained/lost
+- 🔽 **Dropdown selector**: Switch between lap comparisons instantly
+- 🗺️ **Track position axis**: 0% = start/finish, 50% = halfway around
+- 📊 **5 synchronized plots**: Throttle, Brake, Steering, Speed, Time Delta
+
+**Why it's better than time-based comparison:**
+- See EXACTLY which corner is costing you time
+- Compare braking points at the same position
+- Identify problem sections immediately
+- Direct comparison of driving technique
+
+**Usage**:
+```bash
+python compare_laps_by_position.py data/output/telemetry_YYYYMMDD_HHMMSS.csv
+```
+
+**Output**: `lap_comparison_position_YYYYMMDD_HHMMSS.html` (open in browser)
 
 ---
 
@@ -89,22 +124,28 @@ Every braking event isolated with:
 
 ```
 acc-telemetry/
-├── main.py                          # Main telemetry extraction
-├── compare_laps.py                  # Multi-lap comparison tool
-├── generate_detailed_analysis.py    # Generate detailed static graphs
+├── main.py                           # Main telemetry extraction
+├── compare_laps.py                   # Time-based lap comparison
+├── compare_laps_by_position.py       # Position-based lap comparison 🆕
+├── generate_detailed_analysis.py     # Generate detailed static graphs
 ├── config/
-│   └── roi_config.yaml             # ROI coordinates (resolution-specific)
+│   └── roi_config.yaml              # ROI coordinates (resolution-specific)
 ├── src/
-│   ├── video_processor.py          # Video frame extraction
-│   ├── telemetry_extractor.py      # Computer vision analysis
-│   ├── interactive_visualizer.py   # Interactive Plotly visualizations
-│   ├── visualizer.py               # Basic matplotlib visualization
-│   └── detailed_visualizer.py      # Detailed multi-scale visualization
+│   ├── video_processor.py           # Video frame extraction
+│   ├── telemetry_extractor.py       # Computer vision analysis
+│   ├── lap_detector.py              # Lap number detection (OCR/template matching)
+│   ├── position_tracker_v2.py       # Track position tracking (minimap analysis) 🆕
+│   ├── interactive_visualizer.py    # Interactive Plotly visualizations
+│   ├── visualizer.py                # Basic matplotlib visualization
+│   └── detailed_visualizer.py       # Detailed multi-scale visualization
 ├── data/
-│   └── output/                     # Generated CSV and PNG files
+│   └── output/                      # Generated CSV and HTML files
 └── docs/
-    ├── DETAILED_ANALYSIS_GUIDE.md  # Complete guide to using the visualizations
-    └── PROJECT_SUMMARY.md          # Technical overview
+    ├── POSITION_BASED_LAP_COMPARISON.md  # Position-based comparison guide 🆕
+    ├── INTERACTIVE_VISUALIZATION_GUIDE.md # Interactive visualization guide
+    ├── DETAILED_ANALYSIS_GUIDE.md   # Detailed static visualizations guide
+    ├── TRACK_POSITION_TRACKING.md   # Track position tracking guide 🆕
+    └── PROJECT_SUMMARY.md           # Technical overview
 ```
 
 ## 🎮 Supported Setup
@@ -125,9 +166,14 @@ If your video resolution differs:
 
 ## 📖 Documentation
 
-- **[INTERACTIVE_VISUALIZATION_GUIDE.md](INTERACTIVE_VISUALIZATION_GUIDE.md)** - How to use interactive HTML graphs and lap comparison ⭐ START HERE
-- **[DETAILED_ANALYSIS_GUIDE.md](DETAILED_ANALYSIS_GUIDE.md)** - Complete guide to using the detailed static visualizations
-- **[PROJECT_SUMMARY.md](docs/PROJECT_SUMMARY.md)** - Technical deep dive
+### User Guides
+- **[POSITION_BASED_LAP_COMPARISON.md](docs/POSITION_BASED_LAP_COMPARISON.md)** - Position-based lap comparison (where you gain/lose time) 🆕 ⭐ START HERE
+- **[INTERACTIVE_VISUALIZATION_GUIDE.md](docs/INTERACTIVE_VISUALIZATION_GUIDE.md)** - Interactive HTML graphs and basic lap comparison
+- **[DETAILED_ANALYSIS_GUIDE.md](docs/DETAILED_ANALYSIS_GUIDE.md)** - Detailed static visualizations guide
+
+### Technical Guides
+- **[TRACK_POSITION_TRACKING.md](docs/TRACK_POSITION_TRACKING.md)** - How minimap-based position tracking works 🆕
+- **[PROJECT_SUMMARY.md](docs/PROJECT_SUMMARY.md)** - Technical overview and architecture
 
 ## 🛠️ Technical Stack
 
@@ -159,9 +205,11 @@ If your video resolution differs:
 - Identify problem corners
 
 ### Lap Comparison
-- Record multiple laps and compare side-by-side
+- **Position-based**: See exactly where you gain/lose time around the track 🆕
+- **Time-based**: Compare overall lap progression
 - Track improvement over practice sessions
 - Find which corners have the most variation
+- Identify your weakest sections
 
 ### Learn from Others
 - Download fast laps from YouTube
@@ -211,12 +259,14 @@ If your video resolution differs:
 - [ ] Batch processing multiple videos
 - [ ] Resolution-independent ROI scaling
 
-### Phase 3: Advanced Analysis (Future)
+### Phase 3: Advanced Analysis (In Progress)
 - [x] Multi-lap overlay comparison (✅ COMPLETE - see `compare_laps.py`)
 - [x] Interactive zoom/pan visualization (✅ COMPLETE - Plotly integration)
-- [ ] Track map visualization
-- [ ] Sector-by-sector analysis
-- [ ] Time delta analysis
+- [x] Track position tracking (✅ COMPLETE - minimap analysis)
+- [x] Position-based lap comparison (✅ COMPLETE - see `compare_laps_by_position.py`) 🆕
+- [x] Time delta analysis (✅ COMPLETE - integrated in position comparison) 🆕
+- [ ] Track map overlay visualization
+- [ ] Sector-by-sector analysis with automatic sector detection
 - [ ] AI-powered driving feedback
 
 ### Phase 4: Community Platform (Aspirational)
