@@ -5,10 +5,12 @@ Extracts throttle, brake, and steering telemetry from ACC gameplay videos.
 
 import yaml
 import time
+import cv2
 from pathlib import Path
 from src.video_processor import VideoProcessor
 from src.telemetry_extractor import TelemetryExtractor
 from src.lap_detector import LapDetector
+from src.position_tracker_v2 import PositionTrackerV2
 from src.interactive_visualizer import InteractiveTelemetryVisualizer
 
 
@@ -24,6 +26,7 @@ class PerformanceTracker:
             'gear_extraction': [],
             'lap_transition_detection': [],
             'lap_time_extraction': [],
+            'position_tracking': [],
             'data_storage': []
         }
         self.total_frames = 0
@@ -75,7 +78,7 @@ def main():
     total_start_time = time.time()
     
     # Configuration
-    VIDEO_PATH = './input_video.mp4'  # Full race video for testing
+    VIDEO_PATH = './panorama.mp4'  # Full race video for testing
     CONFIG_PATH = 'config/roi_config.yaml'
     
     print("=" * 60)
@@ -97,8 +100,16 @@ def main():
     print(f"🎥 Opening video: {VIDEO_PATH}")
     processor = VideoProcessor(VIDEO_PATH, roi_config)
     extractor = TelemetryExtractor()
+    
+    # Use lap_number_training ROI if available (more accurate for some videos)
+    lap_roi_config = roi_config.copy()
+    if 'lap_number_training' in roi_config:
+        print(f"   Using lap_number_training ROI for improved accuracy")
+        lap_roi_config['lap_number'] = roi_config['lap_number_training']
+    
     # Use template matching for lap numbers (100-500x faster than OCR)
-    lap_detector = LapDetector(roi_config, enable_performance_stats=True)
+    lap_detector = LapDetector(lap_roi_config, enable_performance_stats=True)
+    position_tracker = PositionTrackerV2()
     visualizer = InteractiveTelemetryVisualizer()
     
     if not processor.open_video():
@@ -111,6 +122,36 @@ def main():
     print(f"   FPS: {video_info['fps']:.2f}")
     print(f"   Frames: {video_info['frame_count']}")
     print(f"   Duration: {video_info['duration']:.2f} seconds")
+    
+    # Extract track path if track_map ROI is configured
+    if 'track_map' in roi_config:
+        print(f"\n🗺️  Extracting track path from minimap...")
+        
+        # Sample multiple frames to get complete path (avoid red dot occlusion)
+        # Sample more frames to ensure we get enough clean ones after noise filtering
+        sample_frames = [0, 50, 100, 150, 200, 250, 500, 750, 1000, 1250, 1500]
+        map_rois = []
+        
+        for sample_frame_num in sample_frames:
+            if sample_frame_num >= video_info['frame_count']:
+                break
+            
+            # Seek to frame and read
+            processor.cap.set(cv2.CAP_PROP_POS_FRAMES, sample_frame_num)
+            ret, frame = processor.cap.read()
+            
+            if ret:
+                map_roi = processor.extract_roi(frame, 'track_map')
+                map_rois.append(map_roi)
+        
+        # Reset video to start
+        processor.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        
+        # Extract path from sampled frames
+        if position_tracker.extract_track_path(map_rois):
+            print(f"   ✅ Track path extraction successful")
+        else:
+            print(f"   ⚠️  Warning: Track path extraction failed - position tracking disabled")
     
     # Process video
     print(f"\n⚙️  Processing frames and extracting telemetry...")
@@ -150,11 +191,21 @@ def main():
             gear = lap_detector.extract_gear(processor.current_frame)
             perf_tracker.record('gear_extraction', time.time() - gear_start)
             
+            # Extract track position
+            position_start = time.time()
+            track_position = None
+            if 'track_map' in roi_dict and position_tracker.is_ready():
+                track_position = position_tracker.extract_position(roi_dict['track_map'])
+            perf_tracker.record('position_tracking', time.time() - position_start)
+            
             # Detect lap transitions
             transition_start = time.time()
             if lap_detector.detect_lap_transition(lap_number, previous_lap):
                 # Lap transition detected - mark to read lap time on NEXT frame
                 frames_since_transition = 1  # Will trigger lap time read on next iteration
+                
+                # Reset position tracker for new lap
+                position_tracker.reset_for_new_lap()
                 
                 lap_transitions.append({
                     'frame': frame_num,
@@ -186,6 +237,7 @@ def main():
                 'time': timestamp,
                 'lap_number': lap_number,
                 'lap_time': None,  # Will be filled from completed_lap_times
+                'track_position': track_position,
                 'speed': speed,
                 'gear': gear,
                 'throttle': telemetry['throttle'],
@@ -209,6 +261,28 @@ def main():
                 last_progress = progress
         
         print(f"   ✅ Processing complete! Extracted {len(telemetry_data)} frames")
+        
+        # Finalize lap detection (catches lap transitions in final few frames)
+        final_lap = lap_detector.finalize_lap_detection()
+        if final_lap is not None and (previous_lap is None or final_lap > previous_lap):
+            print(f"   🏁 Final lap detected: Lap {final_lap} (caught at end of video)")
+            
+            # Check if we need to add a final lap transition
+            if previous_lap is not None and final_lap == previous_lap + 1:
+                lap_transitions.append({
+                    'frame': len(telemetry_data) - 1,
+                    'time': telemetry_data[-1]['time'] if telemetry_data else 0,
+                    'from_lap': previous_lap,
+                    'to_lap': final_lap,
+                    'completed_lap_time': None
+                })
+                
+                # Update the last frames to have the correct lap number
+                for entry in reversed(telemetry_data):
+                    if entry['lap_number'] == previous_lap:
+                        entry['lap_number'] = final_lap
+                    else:
+                        break
         
         # Display lap transition info
         if lap_transitions:

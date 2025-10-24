@@ -63,7 +63,7 @@ class VideoProcessor:
         
         Yields:
             Tuple of (frame_number, timestamp, roi_dict)
-            where roi_dict contains {'throttle': roi_img, 'brake': roi_img, 'steering': roi_img}
+            where roi_dict contains {'throttle': roi_img, 'brake': roi_img, 'steering': roi_img, 'track_map': roi_img}
         """
         if self.cap is None:
             raise RuntimeError("Video not opened. Call open_video() first.")
@@ -87,6 +87,10 @@ class VideoProcessor:
                 'brake': self.extract_roi(frame, 'brake'),
                 'steering': self.extract_roi(frame, 'steering')
             }
+            
+            # Add track_map ROI if available in config
+            if 'track_map' in self.roi_config:
+                roi_dict['track_map'] = self.extract_roi(frame, 'track_map')
             
             yield frame_num, timestamp, roi_dict
             frame_num += 1

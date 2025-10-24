@@ -786,6 +786,18 @@ class InteractiveTelemetryVisualizer:
             summary['abs_active_frames'] = 0
             summary['abs_active_percentage'] = 0.0
         
+        # Add track position statistics if column exists
+        if 'track_position' in df.columns:
+            valid_positions = df[df['track_position'].notna()]
+            if not valid_positions.empty:
+                summary['min_track_position'] = valid_positions['track_position'].min()
+                summary['max_track_position'] = valid_positions['track_position'].max()
+                summary['track_position_tracked'] = True
+            else:
+                summary['track_position_tracked'] = False
+        else:
+            summary['track_position_tracked'] = False
+        
         # Add lap-based statistics if lap_number column exists
         if 'lap_number' in df.columns:
             # Filter out None/NaN lap numbers
