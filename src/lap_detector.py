@@ -47,7 +47,7 @@ class LapDetector:
         """
         if roi_config is None:
             # Default ROI coordinates for 1280x720 video
-            self.lap_number_roi = {'x': 237, 'y': 71, 'width': 47, 'height': 37}
+            self.lap_number_roi = {'x': 181, 'y': 71, 'width': 47, 'height': 37}
             self.last_lap_time_roi = {'x': 119, 'y': 87, 'width': 87, 'height': 20}
             self.speed_roi = {'x': 1177, 'y': 621, 'width': 54, 'height': 32}
             self.gear_roi = {'x': 1124, 'y': 591, 'width': 47, 'height': 72}
@@ -204,12 +204,15 @@ class LapDetector:
         # Return last known good value
         return self._last_valid_lap_number
     
-    def _get_smoothed_lap_number(self) -> Optional[int]:
+    def _get_smoothed_lap_number(self, force_consensus: bool = False) -> Optional[int]:
         """
         Apply majority voting to recent lap number detections to filter out noise.
         
         This prevents oscillation between two values (e.g., 10 vs 11, 20 vs 21).
         If the history shows [10, 11, 10, 11, 10], we need to determine which is correct.
+        
+        Args:
+            force_consensus: If True, use lower threshold for end-of-video scenarios
         
         Returns:
             Most common lap number in recent history, or None if history is empty
@@ -226,9 +229,17 @@ class LapDetector:
         lap_number = most_common[0]
         count = most_common[1]
         
-        # Require at least 70% agreement (e.g., 11 out of 15 frames)
-        # This prevents flip-flopping from OCR errors but allows genuine transitions
-        if count >= max(len(self._lap_number_history) * 0.7, 3):
+        # Determine consensus threshold
+        if force_consensus:
+            # At end of video, use lower threshold (30%) to catch final lap transitions
+            # This allows lap changes with only a few frames of visibility
+            threshold = max(len(self._lap_number_history) * 0.3, 1)
+        else:
+            # Normal operation: require 70% agreement
+            # This prevents flip-flopping from OCR errors but allows genuine transitions
+            threshold = max(len(self._lap_number_history) * 0.7, 3)
+        
+        if count >= threshold:
             return lap_number
         
         # Not enough consensus, return None to keep previous value
@@ -590,6 +601,48 @@ class LapDetector:
             return None
         
         return None
+    
+    def finalize_lap_detection(self) -> Optional[int]:
+        """
+        Finalize lap detection at end of video processing.
+        
+        Uses relaxed consensus threshold to detect lap transitions that occurred
+        in the final few frames (e.g., if user stopped recording immediately after
+        crossing the finish line).
+        
+        Call this after processing all frames to get the final lap number.
+        
+        Returns:
+            Final lap number with relaxed consensus, or current last valid lap
+        """
+        if not self._lap_number_history:
+            return self._last_valid_lap_number
+        
+        # Use relaxed threshold (30% instead of 70%) to catch end-of-video transitions
+        final_lap = self._get_smoothed_lap_number(force_consensus=True)
+        
+        if final_lap is not None:
+            # Check if this is a valid progression from last known lap
+            if self._last_valid_lap_number is not None:
+                lap_diff = final_lap - self._last_valid_lap_number
+                
+                # Allow +1 progression (new lap started) or no change
+                if lap_diff == 1:
+                    # Valid lap transition at end of video
+                    self._last_valid_lap_number = final_lap
+                    return final_lap
+                elif lap_diff == 0:
+                    # No change
+                    return self._last_valid_lap_number
+                else:
+                    # Invalid jump - keep previous value
+                    return self._last_valid_lap_number
+            else:
+                # First detection
+                self._last_valid_lap_number = final_lap
+                return final_lap
+        
+        return self._last_valid_lap_number
     
     def close(self):
         """
