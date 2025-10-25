@@ -82,3 +82,6 @@ def visualize_rois(video_path: str, config_path: str = 'config/roi_config.yaml')
 if __name__ == '__main__':
     video_path = './panorama.mp4'
     visualize_rois(video_path)
+
+
+

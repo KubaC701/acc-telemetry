@@ -143,3 +143,6 @@ if __name__ == '__main__':
     video_path = './panorama.mp4'
     find_minimap_interactive(video_path)
     create_roi_test_script()
+
+
+

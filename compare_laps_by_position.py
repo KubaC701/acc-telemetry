@@ -64,24 +64,27 @@ def validate_csv(df: pd.DataFrame) -> tuple[bool, str]:
 
 def print_lap_summary(df: pd.DataFrame):
     """Print summary of available laps."""
-    valid_df = df[(df['lap_number'].notna()) & (df['track_position'].notna())]
-    
+    valid_df = df[(df['lap_number'].notna()) & (df['track_position'].notna())].copy()
+
     if valid_df.empty:
         return
-    
+
+    # Ensure track_position is numeric
+    valid_df['track_position'] = pd.to_numeric(valid_df['track_position'], errors='coerce')
+
     print(f"\n📊 Lap Data Summary:")
     print(f"   {'Lap':<8} {'Frames':<10} {'Duration':<12} {'Position Coverage':<20}")
     print(f"   {'-'*60}")
-    
+
     for lap_num in sorted(valid_df['lap_number'].unique()):
         lap_df = valid_df[valid_df['lap_number'] == lap_num]
-        
+
         frames = len(lap_df)
         duration = lap_df['time'].iloc[-1] - lap_df['time'].iloc[0]
-        min_pos = lap_df['track_position'].min()
-        max_pos = lap_df['track_position'].max()
+        min_pos = float(lap_df['track_position'].min())
+        max_pos = float(lap_df['track_position'].max())
         position_range = f"{min_pos:.1f}% - {max_pos:.1f}%"
-        
+
         print(f"   {int(lap_num):<8} {frames:<10} {duration:<12.2f}s {position_range:<20}")
 
 
@@ -115,6 +118,11 @@ def main():
     try:
         df = pd.read_csv(csv_path)
         print(f"   ✅ Loaded {len(df)} frames")
+
+        # Clean track_position column (remove any malformed values with spaces)
+        if 'track_position' in df.columns:
+            df['track_position'] = pd.to_numeric(df['track_position'], errors='coerce')
+
     except Exception as e:
         print(f"\n❌ Error loading CSV: {e}")
         return 1
