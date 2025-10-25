@@ -49,7 +49,10 @@ class PositionTrackerV2:
         self.lap_just_started: bool = False  # Flag to capture start position on next detection
         
         # HSV color ranges for detection
-        self.white_lower = np.array([0, 0, 200])
+        # Racing line varies: bright sections 98.3%, dark sections 87.3%
+        # Car cage: HSV(195°, 7.3%, 78.9%)
+        # V=210/255=82.4% provides 3.5% margin above car cage, 4.9% below darkest racing line
+        self.white_lower = np.array([0, 0, 210])
         self.white_upper = np.array([180, 30, 255])
         
         # Red dot detection - more restrictive to avoid false positives
@@ -95,7 +98,7 @@ class PositionTrackerV2:
             # Initial covariance (high uncertainty initially)
             self.kf.P *= 100.0
     
-    def extract_track_path(self, map_rois: List[np.ndarray], frequency_threshold: float = 0.6) -> bool:
+    def extract_track_path(self, map_rois: List[np.ndarray], frequency_threshold: float = 0.45) -> bool:
         """
         Extract the white racing line using multi-frame frequency voting.
         
@@ -108,7 +111,7 @@ class PositionTrackerV2:
         
         Args:
             map_rois: List of map ROI images from different frames (recommended: 50+)
-            frequency_threshold: Pixel must be white in this % of frames (default: 0.6 = 60%)
+            frequency_threshold: Pixel must be white in this % of frames (default: 0.45 = 45%)
         
         Returns:
             True if path extraction successful and validated, False otherwise
@@ -238,11 +241,15 @@ class PositionTrackerV2:
         # STEP 6: Validate extraction
         print(f"   Step 6: Validating path extraction...")
         self.validation_passed = self._validate_path_extraction()
-        
+
         if not self.validation_passed:
             print("      ❌ Path validation failed")
             return False
-        
+
+        # STEP 7: Save debug visualization
+        print(f"   Step 7: Saving debug visualization...")
+        self._save_path_visualization(map_rois[0], cleaned_mask)
+
         print(f"\n✅ Track path extraction successful and validated!")
         return True
     
@@ -433,6 +440,117 @@ class PositionTrackerV2:
                 return raw_position
             else:
                 return self.last_position
+
+    def _save_path_visualization(self, map_roi: np.ndarray, cleaned_mask: np.ndarray) -> None:
+        """
+        Save debug visualization of the extracted track path.
+
+        Args:
+            map_roi: Original map ROI image
+            cleaned_mask: Binary mask of the cleaned racing line
+        """
+        import os
+        from datetime import datetime
+
+        # Create debug images
+        debug_img = map_roi.copy()
+
+        # Create mask overlay (show cleaned mask in cyan on original image)
+        mask_overlay = map_roi.copy()
+        mask_colored = cv2.cvtColor(cleaned_mask, cv2.COLOR_GRAY2BGR)
+        mask_colored[cleaned_mask > 0] = [255, 255, 0]  # Cyan for racing line
+        mask_overlay = cv2.addWeighted(mask_overlay, 0.6, mask_colored, 0.4, 0)
+
+        # Draw the extracted racing line contour in green
+        for i in range(len(self.track_path) - 1):
+            pt1 = self.track_path[i]
+            pt2 = self.track_path[i + 1]
+            cv2.line(debug_img, pt1, pt2, (0, 255, 0), 2)
+
+        # Draw closing line (last to first)
+        cv2.line(debug_img, self.track_path[-1], self.track_path[0], (0, 255, 0), 2)
+
+        # Draw numbered waypoints every 50 points
+        for i in range(0, len(self.track_path), 50):
+            pt = self.track_path[i]
+            cv2.circle(debug_img, pt, 3, (0, 0, 255), -1)
+            cv2.putText(debug_img, str(i), (pt[0] + 5, pt[1] + 5),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 1)
+
+        # Add info text
+        cv2.putText(debug_img, f"Total points: {len(self.track_path)}", (5, 15),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
+        cv2.putText(debug_img, f"Total pixels: {self.total_path_pixels}", (5, 30),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
+
+        # Save to data/output/
+        output_dir = "data/output"
+        os.makedirs(output_dir, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # Save contour visualization
+        contour_path = os.path.join(output_dir, f"track_path_debug_{timestamp}.png")
+        cv2.imwrite(contour_path, debug_img)
+        print(f"      ✅ Saved track path visualization to {contour_path}")
+
+        # Save mask overlay visualization
+        mask_path = os.path.join(output_dir, f"track_mask_debug_{timestamp}.png")
+        cv2.imwrite(mask_path, mask_overlay)
+        print(f"      ✅ Saved mask overlay visualization to {mask_path}")
+
+    def _calculate_path_distance(self, start_idx: int, end_idx: int) -> float:
+        """
+        Calculate cumulative Euclidean distance along the racing line path.
+
+        Handles wraparound when end_idx < start_idx (crossed lap line).
+
+        Args:
+            start_idx: Starting index in self.track_path
+            end_idx: Ending index in self.track_path
+
+        Returns:
+            Cumulative distance in pixels along the path
+        """
+        if not self.track_path:
+            return 0.0
+
+        total_distance = 0.0
+
+        if end_idx >= start_idx:
+            # Normal case: no wraparound
+            for i in range(start_idx, end_idx):
+                p1 = self.track_path[i]
+                p2 = self.track_path[i + 1]
+                dx = p2[0] - p1[0]
+                dy = p2[1] - p1[1]
+                total_distance += np.sqrt(dx*dx + dy*dy)
+        else:
+            # Wraparound case: go from start_idx to end, then from 0 to end_idx
+            # Distance from start_idx to end of path
+            for i in range(start_idx, len(self.track_path) - 1):
+                p1 = self.track_path[i]
+                p2 = self.track_path[i + 1]
+                dx = p2[0] - p1[0]
+                dy = p2[1] - p1[1]
+                total_distance += np.sqrt(dx*dx + dy*dy)
+
+            # Distance from last point to first point (closing the loop)
+            p1 = self.track_path[-1]
+            p2 = self.track_path[0]
+            dx = p2[0] - p1[0]
+            dy = p2[1] - p1[1]
+            total_distance += np.sqrt(dx*dx + dy*dy)
+
+            # Distance from 0 to end_idx
+            for i in range(0, end_idx):
+                p1 = self.track_path[i]
+                p2 = self.track_path[i + 1]
+                dx = p2[0] - p1[0]
+                dy = p2[1] - p1[1]
+                total_distance += np.sqrt(dx*dx + dy*dy)
+
+        return total_distance
     
     def _apply_kalman_filter(self, measurement: Optional[float]) -> float:
         """
