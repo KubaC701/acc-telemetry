@@ -41,14 +41,13 @@ class PositionTrackerV2:
         self.track_path: Optional[List[Tuple[int, int]]] = None
         self.total_path_pixels: int = 0  # Total number of pixels in the racing line path
         self.total_track_length: float = 0.0  # Total arc length of racing line (cached)
-        self.start_position: Optional[Tuple[int, int]] = None  # (x, y) where lap starts (set ONCE on lap 1)
+        self.start_position: Optional[Tuple[int, int]] = None  # (x, y) where lap starts (set on lap change)
         self.start_idx: int = 0  # Index in track_path closest to start_position (cached for performance)
         self.track_center: Optional[Tuple[float, float]] = None  # (x, y) center of track
         self.last_position: float = 0.0
         self.path_extracted: bool = False
         self.validation_passed: bool = False
         self.lap_just_started: bool = False  # Flag to capture start position on next detection
-        self.start_position_locked: bool = False  # Flag to prevent start position from changing after lap 1
 
         # Simple validation parameters
         self.max_jump_per_frame = max_jump_per_frame  # Max forward jump allowed (%)
@@ -212,16 +211,10 @@ class PositionTrackerV2:
 
         self.path_extracted = True
 
-        # STEP 5.5: Set permanent start position (index 0 of track_path)
-        # This ensures ALL laps use the same reference point for position calculation
-        # Using track_path[0] as the canonical start position makes positions deterministic
-        self.start_position = self.track_path[0]
-        self.start_idx = 0
-
         print(f"      ✅ Total racing line pixels: {self.total_path_pixels}")
         print(f"      ✅ Total track arc length: {self.total_track_length:.1f} pixels")
         print(f"      ✅ Track center: ({center_x:.1f}, {center_y:.1f})")
-        print(f"      ✅ Start position (index 0): {self.start_position}")
+        print(f"      ℹ️  Start position will be set on first lap change")
         
         # STEP 6: Validate extraction
         print(f"   Step 6: Validating path extraction...")
@@ -401,7 +394,6 @@ class PositionTrackerV2:
         # STEP 5: Handle near-completion detection
         # If position drops significantly from last_position when we're near 100%,
         # it means we've crossed the start/finish line and should show 100% not <95%
-        # BUT: Don't apply this if last_position is very low (e.g., we just started a new lap)
         if self.last_position > 90.0 and position < 90.0 and (self.last_position - position) > 3.0:
             # This is likely a lap completion - return 100% instead of wrapping back
             # The lap number detector will trigger reset on next frame
@@ -439,61 +431,28 @@ class PositionTrackerV2:
         if dot_position is not None:
             dot_x, dot_y = dot_position
 
-            # If lap just started, handle start position
+            # If lap just started, set current position as new start point
             if self.lap_just_started:
-                # Only set start position on FIRST lap (lap 1)
-                # All subsequent laps reuse this same reference point
-                if not self.start_position_locked:
-                    # FIRST LAP: Set the red dot position as the canonical start position
-                    self.start_position = (dot_x, dot_y)
+                # Set the red dot position as the start position
+                self.start_position = (dot_x, dot_y)
 
-                    # Find and cache the start_idx (closest point on track_path to start_position)
-                    min_distance = float('inf')
-                    closest_distance_px = 0.0
-                    for i, (px, py) in enumerate(self.track_path):
-                        dx = dot_x - px
-                        dy = dot_y - py
-                        distance = dx*dx + dy*dy
-                        if distance < min_distance:
-                            min_distance = distance
-                            self.start_idx = i
-                            closest_distance_px = np.sqrt(distance)
+                # Find and cache the start_idx (closest point on track_path to start_position)
+                min_distance = float('inf')
+                for i, (px, py) in enumerate(self.track_path):
+                    dx = dot_x - px
+                    dy = dot_y - py
+                    distance = dx*dx + dy*dy
+                    if distance < min_distance:
+                        min_distance = distance
+                        self.start_idx = i
 
-                    # Lock the start position so it never changes
-                    self.start_position_locked = True
+                self.lap_just_started = False
 
-                    # Calculate what percentage offset this is from track_path[0]
-                    offset_from_zero = 0.0
-                    if self.start_idx > 0:
-                        for i in range(0, self.start_idx):
-                            p1 = self.track_path[i]
-                            p2 = self.track_path[i + 1]
-                            dx = p2[0] - p1[0]
-                            dy = p2[1] - p1[1]
-                            offset_from_zero += np.sqrt(dx*dx + dy*dy)
-                        offset_percentage = (offset_from_zero / self.total_track_length) * 100.0
-                    else:
-                        offset_percentage = 0.0
+                print(f"      ✅ New lap start set at pixel position ({dot_x}, {dot_y}), track_path index {self.start_idx}")
 
-                    print(f"      🏁 LAP 1 START (LOCKED - will be used for all laps):")
-                    print(f"         Red dot pixel: ({dot_x}, {dot_y})")
-                    print(f"         Closest track_path index: {self.start_idx} (out of {len(self.track_path)})")
-                    print(f"         Distance to closest point: {closest_distance_px:.2f} pixels")
-                    print(f"         Offset from track_path[0]: {offset_percentage:.3f}%")
-                    print(f"         Arc length from index 0: {offset_from_zero:.1f} px (total: {self.total_track_length:.1f} px)")
-
-                    # For lap 1, return 0.0 for the first frame
-                    self.lap_just_started = False
-                    self.last_position = 0.0
-                    return 0.0
-                else:
-                    # SUBSEQUENT LAPS: Reuse the locked start position from lap 1
-                    # Don't return 0.0 - let position calculation continue normally
-                    # The position will naturally wrap around through 0% as the car passes
-                    # the lap 1 start position
-                    print(f"      🏁 Lap reset - using locked start position from lap 1: pixel ({self.start_position[0]}, {self.start_position[1]}), index {self.start_idx}")
-                    self.lap_just_started = False
-                    # Don't set last_position or return early - continue to calculate position below
+                # Return 0.0 for the first frame of new lap
+                self.last_position = 0.0
+                return 0.0
 
             # Calculate raw position normally
             raw_position = self.calculate_position(dot_x, dot_y)
@@ -635,24 +594,14 @@ class PositionTrackerV2:
     def reset_for_new_lap(self) -> None:
         """
         Reset position tracking for a new lap.
-
+        
         This method MUST be called on the FIRST frame after a lap number change.
-
-        IMPORTANT: The start position is set ONLY on lap 1 and then locked for all
-        subsequent laps. This ensures deterministic position measurements - the same
-        physical location on track will always report the same position percentage,
-        regardless of which lap it is.
-
-        On lap 1: The next call to extract_position() will detect the red dot and
-                  use that pixel position as the canonical start position (0%) for
-                  ALL laps.
-
-        On lap 2+: The locked start position from lap 1 is reused. This prevents
-                   1-pixel variations in red dot detection from causing position
-                   offsets across laps.
+        It sets the current red dot position as the new start position (pixel index 0).
+        
+        The next call to extract_position() will detect the red dot and use that
+        pixel index as the new start_pixel_index.
         """
-        # Set flag to capture start position on next detection (lap 1 only)
-        # or to reset tracking state (lap 2+)
+        # Set flag to capture start position on next detection
         self.lap_just_started = True
         print(f"      🏁 Lap reset triggered - next detected position will be new start (0%)")
     
