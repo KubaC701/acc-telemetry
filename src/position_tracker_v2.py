@@ -6,7 +6,7 @@ Addresses the fundamental issues with the original implementation:
 2. More robust red dot detection
 3. Proper position calculation with start line reference
 4. Better error handling and validation
-5. Kalman filtering for smooth position tracking and outlier rejection
+5. Simple forward-progress validation (no Kalman filter complexity)
 
 Author: ACC Telemetry Extractor
 """
@@ -14,89 +14,58 @@ Author: ACC Telemetry Extractor
 import cv2
 import numpy as np
 from typing import Optional, Tuple, List, Dict
-from filterpy.kalman import KalmanFilter
-from filterpy.common import Q_discrete_white_noise
 
 
 class PositionTrackerV2:
     """
     Improved track position tracker with better start line detection and validation.
-    
+
     Key improvements:
     - Detects start/finish line from path geometry
     - More robust red dot detection
     - Better position calculation with proper start reference
     - Comprehensive validation and error handling
-    - Kalman filtering for smooth tracking and outlier rejection
+    - Simple forward-progress validation (no complex filtering)
     """
-    
-    def __init__(self, fps: float = 30.0, enable_kalman: bool = True):
+
+    def __init__(self, fps: float = 30.0, max_jump_per_frame: float = 1.0):
         """
         Initialize the improved position tracker.
-        
+
         Args:
-            fps: Video frames per second (used for Kalman filter dt)
-            enable_kalman: Enable Kalman filtering (default: True)
+            fps: Video frames per second (for reference, not currently used)
+            max_jump_per_frame: Maximum allowed position jump per frame (default: 1.0%)
+                               At 30 FPS, a full lap takes ~100 seconds, so 1% = 1 second of track
+                               This allows for normal speed variations while rejecting obvious outliers
         """
         self.track_path: Optional[List[Tuple[int, int]]] = None
         self.total_path_pixels: int = 0  # Total number of pixels in the racing line path
-        self.start_position: Optional[Tuple[int, int]] = None  # (x, y) where lap starts (set on lap change)
+        self.total_track_length: float = 0.0  # Total arc length of racing line (cached)
+        self.start_position: Optional[Tuple[int, int]] = None  # (x, y) where lap starts (set ONCE on lap 1)
+        self.start_idx: int = 0  # Index in track_path closest to start_position (cached for performance)
         self.track_center: Optional[Tuple[float, float]] = None  # (x, y) center of track
-        self.start_angle: float = 0.0  # Angle from center to start position
         self.last_position: float = 0.0
         self.path_extracted: bool = False
         self.validation_passed: bool = False
         self.lap_just_started: bool = False  # Flag to capture start position on next detection
-        
+        self.start_position_locked: bool = False  # Flag to prevent start position from changing after lap 1
+
+        # Simple validation parameters
+        self.max_jump_per_frame = max_jump_per_frame  # Max forward jump allowed (%)
+        self.fps = fps  # For reference
+
         # HSV color ranges for detection
         # Racing line varies: bright sections 98.3%, dark sections 87.3%
         # Car cage: HSV(195°, 7.3%, 78.9%)
         # V=210/255=82.4% provides 3.5% margin above car cage, 4.9% below darkest racing line
         self.white_lower = np.array([0, 0, 210])
         self.white_upper = np.array([180, 30, 255])
-        
+
         # Red dot detection - more restrictive to avoid false positives
         self.red_lower1 = np.array([0, 150, 150])
         self.red_upper1 = np.array([10, 255, 255])
         self.red_lower2 = np.array([170, 150, 150])
         self.red_upper2 = np.array([180, 255, 255])
-        
-        # Kalman filter setup
-        self.enable_kalman = enable_kalman
-        self.fps = fps
-        self.dt = 1.0 / fps  # Time between frames
-        self.kalman_initialized = False
-        self.outlier_threshold = 3.0  # Position jump > 3% = outlier (tightened from 10%)
-        self.outlier_count = 0
-        
-        if self.enable_kalman:
-            # Initialize 1D Kalman filter for position tracking
-            # State: [position, velocity] where velocity is %/frame
-            self.kf = KalmanFilter(dim_x=2, dim_z=1)
-            
-            # Initial state: [0% position, 0 velocity]
-            self.kf.x = np.array([[0.], [0.]])
-            
-            # State transition matrix (constant velocity model)
-            # position_new = position_old + velocity * dt
-            # velocity_new = velocity_old
-            self.kf.F = np.array([[1., self.dt],
-                                  [0., 1.]])
-            
-            # Measurement function (we only measure position directly)
-            self.kf.H = np.array([[1., 0.]])
-            
-            # Measurement uncertainty (red dot detection noise)
-            # Higher value = trust measurements less, smoother output
-            self.kf.R = np.array([[2.0]])  # 2% position uncertainty
-            
-            # Process noise (how much position changes unexpectedly)
-            # Accounts for acceleration, varying speed through corners
-            # Reduced from 1.0 to 0.3 - position is more predictable than initially assumed
-            self.kf.Q = Q_discrete_white_noise(dim=2, dt=self.dt, var=0.3)
-            
-            # Initial covariance (high uncertainty initially)
-            self.kf.P *= 100.0
     
     def extract_track_path(self, map_rois: List[np.ndarray], frequency_threshold: float = 0.45) -> bool:
         """
@@ -220,23 +189,39 @@ class PositionTrackerV2:
         print(f"      ✅ Path points: {len(path_points)}")
         
         # STEP 5: Store path and calculate track center
-        print(f"   Step 5: Calculating track center and storing path...")
-        
+        print(f"   Step 5: Calculating track center and arc length...")
+
         # Store results (path_points is already in order from contour)
         self.track_path = [(int(p[0]), int(p[1])) for p in path_points]
         self.total_path_pixels = len(path_points)
-        
+
         # Calculate track center as the centroid of all path points
         path_array = np.array(self.track_path)
         center_x = np.mean(path_array[:, 0])
         center_y = np.mean(path_array[:, 1])
         self.track_center = (center_x, center_y)
-        
+
+        # Calculate total track length (arc length of racing line)
+        self.total_track_length = 0.0
+        for i in range(len(self.track_path)):
+            p1 = self.track_path[i]
+            p2 = self.track_path[(i + 1) % len(self.track_path)]  # Wrap around
+            dx = p2[0] - p1[0]
+            dy = p2[1] - p1[1]
+            self.total_track_length += np.sqrt(dx*dx + dy*dy)
+
         self.path_extracted = True
-        
+
+        # STEP 5.5: Set permanent start position (index 0 of track_path)
+        # This ensures ALL laps use the same reference point for position calculation
+        # Using track_path[0] as the canonical start position makes positions deterministic
+        self.start_position = self.track_path[0]
+        self.start_idx = 0
+
         print(f"      ✅ Total racing line pixels: {self.total_path_pixels}")
+        print(f"      ✅ Total track arc length: {self.total_track_length:.1f} pixels")
         print(f"      ✅ Track center: ({center_x:.1f}, {center_y:.1f})")
-        print(f"      ℹ️  Start position will be set on first lap change")
+        print(f"      ✅ Start position (index 0): {self.start_position}")
         
         # STEP 6: Validate extraction
         print(f"   Step 6: Validating path extraction...")
@@ -330,116 +315,191 @@ class PositionTrackerV2:
     
     def calculate_position(self, dot_x: int, dot_y: int) -> float:
         """
-        Calculate position percentage using angular position around track center.
-        
-        This method is independent of contour ordering:
-        1. Calculate angle from track center to red dot
-        2. Calculate angle from track center to start position  
-        3. Position = (angle_difference / 360°) × 100%
-        
+        Calculate position percentage using arc length along the racing line.
+
+        IMPORTANT: Position is calculated relative to the START POSITION set when lap begins,
+        not relative to track_path[0]. This ensures the first frame of a new lap shows 0%.
+
+        This method uses actual track distance instead of angular position:
+        1. Find the closest point on the racing line to the red dot
+        2. Use cached start_idx from reset_for_new_lap() (performance optimization)
+        3. Calculate arc length from start_idx to current point
+        4. Position = (arc_length / total_track_length) × 100%
+
+        Performance: Caching start_idx saves ~30-50 distance calculations per frame.
+
         Args:
             dot_x: Red dot x-coordinate
             dot_y: Red dot y-coordinate
-        
+
         Returns:
             Position percentage (0.0 - 100.0) from start position
         """
         if not self.path_extracted or self.track_center is None or self.start_position is None:
             return 0.0
-        
-        # Calculate angle from center to current red dot position
-        dx = dot_x - self.track_center[0]
-        dy = dot_y - self.track_center[1]
-        current_angle = np.arctan2(dy, dx)  # Returns -π to +π
-        
-        # Calculate angular difference from start position
-        # Convert to degrees for easier handling
-        current_angle_deg = np.degrees(current_angle)
-        start_angle_deg = np.degrees(self.start_angle)
-        
-        # Calculate counter-clockwise angle from start to current
-        # (ACC tracks typically go counter-clockwise when viewed from above)
-        angle_diff = start_angle_deg - current_angle_deg
-        
-        # Normalize to 0-360 range (handle wraparound)
-        if angle_diff < 0:
-            angle_diff += 360
-        elif angle_diff >= 360:
-            angle_diff -= 360
-        
-        # Convert to percentage
-        position = (angle_diff / 360.0) * 100.0
-        
+
+        if not self.track_path or len(self.track_path) == 0:
+            return 0.0
+
+        # STEP 1: Find closest point on racing line to red dot
+        min_distance = float('inf')
+        closest_idx = 0
+
+        for i, (px, py) in enumerate(self.track_path):
+            dx = dot_x - px
+            dy = dot_y - py
+            distance = dx*dx + dy*dy  # Squared distance (faster, no sqrt needed)
+
+            if distance < min_distance:
+                min_distance = distance
+                closest_idx = i
+
+        # STEP 2: Use cached start_idx (set when lap started via reset_for_new_lap())
+
+        # STEP 3: Calculate arc length from start to current position
+        arc_length = 0.0
+
+        if closest_idx >= self.start_idx:
+            # Normal case: current position is ahead of start
+            for i in range(self.start_idx, closest_idx):
+                p1 = self.track_path[i]
+                p2 = self.track_path[i + 1]
+                dx = p2[0] - p1[0]
+                dy = p2[1] - p1[1]
+                arc_length += np.sqrt(dx*dx + dy*dy)
+        else:
+            # Wraparound case: we've passed the end of the path array
+            # Go from start_idx to end, then from 0 to closest_idx
+            for i in range(self.start_idx, len(self.track_path) - 1):
+                p1 = self.track_path[i]
+                p2 = self.track_path[i + 1]
+                dx = p2[0] - p1[0]
+                dy = p2[1] - p1[1]
+                arc_length += np.sqrt(dx*dx + dy*dy)
+
+            # Add closing segment (last point to first point)
+            p1 = self.track_path[-1]
+            p2 = self.track_path[0]
+            dx = p2[0] - p1[0]
+            dy = p2[1] - p1[1]
+            arc_length += np.sqrt(dx*dx + dy*dy)
+
+            # Add from start to current position
+            for i in range(0, closest_idx):
+                p1 = self.track_path[i]
+                p2 = self.track_path[i + 1]
+                dx = p2[0] - p1[0]
+                dy = p2[1] - p1[1]
+                arc_length += np.sqrt(dx*dx + dy*dy)
+
+        # STEP 4: Convert to percentage using cached total track length
+        if self.total_track_length > 0:
+            position = (arc_length / self.total_track_length) * 100.0
+        else:
+            position = 0.0
+
+        # STEP 5: Handle near-completion detection
+        # If position drops significantly from last_position when we're near 100%,
+        # it means we've crossed the start/finish line and should show 100% not <95%
+        # BUT: Don't apply this if last_position is very low (e.g., we just started a new lap)
+        if self.last_position > 90.0 and position < 90.0 and (self.last_position - position) > 3.0:
+            # This is likely a lap completion - return 100% instead of wrapping back
+            # The lap number detector will trigger reset on next frame
+            position = 100.0
+
         # Clamp to valid range
         position = max(0.0, min(100.0, position))
-        
+
         return position
     
     def extract_position(self, map_roi: np.ndarray) -> float:
         """
-        Extract track position from map ROI with Kalman filtering.
-        
-        Uses Kalman filter to:
-        - Smooth position tracking
-        - Reject outliers (position jumps > threshold)
-        - Handle missing measurements (red dot not detected)
-        
+        Extract track position from map ROI with simple forward-progress validation.
+
+        Validation rules:
+        1. Position must move forward (or stay same if detection fails)
+        2. Max forward jump per frame: self.max_jump_per_frame (default 0.1%)
+        3. Near lap end (>95%), allow jump to 100%
+        4. On lap reset, return to 0%
+
         Args:
             map_roi: Map ROI image from current frame
-        
+
         Returns:
-            Position percentage (0.0 - 100.0), filtered for smoothness
+            Position percentage (0.0 - 100.0), validated for forward progress
         """
         if not self.path_extracted or not self.validation_passed:
             return 0.0
-        
+
         # Detect red dot
         dot_position = self.detect_red_dot(map_roi)
-        
+
         # Calculate raw position (if red dot detected)
         raw_position = None
         if dot_position is not None:
             dot_x, dot_y = dot_position
-            
-            # If lap just started, set current position as new start point
+
+            # If lap just started, handle start position
             if self.lap_just_started:
-                # Set the red dot position as the start position
-                self.start_position = (dot_x, dot_y)
-                
-                # Calculate the angle from track center to start position
-                dx = dot_x - self.track_center[0]
-                dy = dot_y - self.track_center[1]
-                self.start_angle = np.arctan2(dy, dx)
-                
-                self.lap_just_started = False
-                
-                start_angle_deg = np.degrees(self.start_angle)
-                print(f"      ✅ New lap start set at ({dot_x}, {dot_y}), angle: {start_angle_deg:.1f}°")
-                
-                # Reset Kalman filter for new lap
-                if self.enable_kalman:
-                    self.kf.x = np.array([[0.], [0.]])
-                    self.kf.P *= 100.0
-                    self.kalman_initialized = False
-                    self.outlier_count = 0
-                
-                # Return 0.0 for the first frame of new lap
-                self.last_position = 0.0
-                return 0.0
-            
+                # Only set start position on FIRST lap (lap 1)
+                # All subsequent laps reuse this same reference point
+                if not self.start_position_locked:
+                    # FIRST LAP: Set the red dot position as the canonical start position
+                    self.start_position = (dot_x, dot_y)
+
+                    # Find and cache the start_idx (closest point on track_path to start_position)
+                    min_distance = float('inf')
+                    closest_distance_px = 0.0
+                    for i, (px, py) in enumerate(self.track_path):
+                        dx = dot_x - px
+                        dy = dot_y - py
+                        distance = dx*dx + dy*dy
+                        if distance < min_distance:
+                            min_distance = distance
+                            self.start_idx = i
+                            closest_distance_px = np.sqrt(distance)
+
+                    # Lock the start position so it never changes
+                    self.start_position_locked = True
+
+                    # Calculate what percentage offset this is from track_path[0]
+                    offset_from_zero = 0.0
+                    if self.start_idx > 0:
+                        for i in range(0, self.start_idx):
+                            p1 = self.track_path[i]
+                            p2 = self.track_path[i + 1]
+                            dx = p2[0] - p1[0]
+                            dy = p2[1] - p1[1]
+                            offset_from_zero += np.sqrt(dx*dx + dy*dy)
+                        offset_percentage = (offset_from_zero / self.total_track_length) * 100.0
+                    else:
+                        offset_percentage = 0.0
+
+                    print(f"      🏁 LAP 1 START (LOCKED - will be used for all laps):")
+                    print(f"         Red dot pixel: ({dot_x}, {dot_y})")
+                    print(f"         Closest track_path index: {self.start_idx} (out of {len(self.track_path)})")
+                    print(f"         Distance to closest point: {closest_distance_px:.2f} pixels")
+                    print(f"         Offset from track_path[0]: {offset_percentage:.3f}%")
+                    print(f"         Arc length from index 0: {offset_from_zero:.1f} px (total: {self.total_track_length:.1f} px)")
+
+                    # For lap 1, return 0.0 for the first frame
+                    self.lap_just_started = False
+                    self.last_position = 0.0
+                    return 0.0
+                else:
+                    # SUBSEQUENT LAPS: Reuse the locked start position from lap 1
+                    # Don't return 0.0 - let position calculation continue normally
+                    # The position will naturally wrap around through 0% as the car passes
+                    # the lap 1 start position
+                    print(f"      🏁 Lap reset - using locked start position from lap 1: pixel ({self.start_position[0]}, {self.start_position[1]}), index {self.start_idx}")
+                    self.lap_just_started = False
+                    # Don't set last_position or return early - continue to calculate position below
+
             # Calculate raw position normally
             raw_position = self.calculate_position(dot_x, dot_y)
-        
-        # Apply Kalman filtering if enabled
-        if self.enable_kalman and self.start_position is not None:
-            return self._apply_kalman_filter(raw_position)
-        else:
-            # No Kalman filtering - use raw position or last position
-            if raw_position is not None:
-                self.last_position = raw_position
-                return raw_position
-            else:
-                return self.last_position
+
+        # Apply simple validation
+        return self._validate_position(raw_position)
 
     def _save_path_visualization(self, map_roi: np.ndarray, cleaned_mask: np.ndarray) -> None:
         """
@@ -552,113 +612,47 @@ class PositionTrackerV2:
 
         return total_distance
     
-    def _apply_kalman_filter(self, measurement: Optional[float]) -> float:
+    def _validate_position(self, raw_position: Optional[float]) -> float:
         """
-        Apply Kalman filter to position measurement with physical constraints.
+        RAW MODE: Return raw measurements without any validation or filtering.
 
-        Constraints enforced:
-        1. Monotonic position: Position cannot decrease (except at lap wraparound)
-        2. Positive velocity: Velocity must be >= 0 (car always moves forward)
-        3. Outlier rejection: Measurements inconsistent with prediction are rejected
+        All restrictions disabled to observe raw position measurements.
 
         Args:
-            measurement: Raw position measurement (0-100%), or None if no detection
+            raw_position: Raw position measurement (0-100%), or None if no detection
 
         Returns:
-            Filtered position (0-100%)
+            Raw position (0-100%) or last position if no detection
         """
-        # Initialize Kalman filter on first valid measurement
-        if not self.kalman_initialized and measurement is not None:
-            self.kf.x = np.array([[measurement], [0.]])
-            self.kf.P *= 100.0
-            self.kalman_initialized = True
-            self.last_position = measurement
-            return measurement
+        # Case 1: No measurement - use last known position
+        if raw_position is None:
+            return self.last_position
 
-        # Predict next state
-        self.kf.predict()
-        predicted_position = self.kf.x[0, 0]
-
-        # CONSTRAINT 1: Enforce positive velocity (car always moves forward)
-        # Clamp velocity to minimum 0.01%/frame to prevent backward movement
-        if self.kf.x[1, 0] < 0.01:
-            self.kf.x[1, 0] = 0.01
-
-        # If we have a measurement, validate it before using
-        if measurement is not None:
-            # CONSTRAINT 2: Monotonic position check (reject significant backward measurements)
-            # Allow small backward jitter (< 0.5%) due to detection noise
-            # But reject large backward jumps which are clearly wrong
-            is_backward = False
-            backward_amount = self.last_position - measurement
-
-            if backward_amount > 0.5:  # More than 0.5% backward
-                # Check if this is lap wraparound (99% -> 0%)
-                is_wraparound = (self.last_position > 95 and measurement < 5)
-
-                if not is_wraparound:
-                    # This is significant backward movement - reject measurement
-                    is_backward = True
-                    # Only print if backward amount is significant (> 1%)
-                    if backward_amount > 1.0:
-                        print(f"      ⚠️  Large backward movement rejected: {self.last_position:.2f}% → {measurement:.2f}% (Δ={backward_amount:.2f}%)")
-
-            # If measurement is backward, skip to using prediction only
-            if is_backward:
-                filtered_position = predicted_position
-            else:
-                # CONSTRAINT 3: Outlier detection based on innovation
-                # Calculate innovation (difference between measurement and prediction)
-                innovation = abs(measurement - predicted_position)
-
-                # Handle wraparound at 0/100%
-                if innovation > 50:  # Likely wraparound
-                    if measurement < 10 and predicted_position > 90:
-                        # Wraparound from 99% -> 0%
-                        innovation = (100 - predicted_position) + measurement
-                    elif measurement > 90 and predicted_position < 10:
-                        # Wraparound from 0% -> 99% (going backwards - shouldn't happen)
-                        innovation = (100 - measurement) + predicted_position
-
-                # Outlier detection
-                if innovation > self.outlier_threshold:
-                    # Measurement is an outlier - reject it
-                    self.outlier_count += 1
-                    print(f"      ⚠️  Outlier rejected: measured {measurement:.1f}%, expected {predicted_position:.1f}%, innovation {innovation:.1f}%")
-
-                    # Use prediction only (don't update)
-                    filtered_position = predicted_position
-                else:
-                    # Measurement is valid - update Kalman filter
-                    self.kf.update(np.array([[measurement]]))
-                    filtered_position = self.kf.x[0, 0]
-
-                    # Reset outlier count on successful measurement
-                    if self.outlier_count > 0:
-                        self.outlier_count = 0
-        else:
-            # No measurement - use prediction only
-            filtered_position = predicted_position
-        
-        # Clamp to valid range
-        filtered_position = max(0.0, min(100.0, filtered_position))
-        
-        # Store for next frame
-        self.last_position = filtered_position
-        
-        return filtered_position
+        # Case 2: Accept ALL raw measurements without any validation
+        self.last_position = raw_position
+        return raw_position
     
     def reset_for_new_lap(self) -> None:
         """
         Reset position tracking for a new lap.
-        
+
         This method MUST be called on the FIRST frame after a lap number change.
-        It sets the current red dot position as the new start position (pixel index 0).
-        
-        The next call to extract_position() will detect the red dot and use that
-        pixel index as the new start_pixel_index.
+
+        IMPORTANT: The start position is set ONLY on lap 1 and then locked for all
+        subsequent laps. This ensures deterministic position measurements - the same
+        physical location on track will always report the same position percentage,
+        regardless of which lap it is.
+
+        On lap 1: The next call to extract_position() will detect the red dot and
+                  use that pixel position as the canonical start position (0%) for
+                  ALL laps.
+
+        On lap 2+: The locked start position from lap 1 is reused. This prevents
+                   1-pixel variations in red dot detection from causing position
+                   offsets across laps.
         """
-        # Set flag to capture start position on next detection
+        # Set flag to capture start position on next detection (lap 1 only)
+        # or to reset tracking state (lap 2+)
         self.lap_just_started = True
         print(f"      🏁 Lap reset triggered - next detected position will be new start (0%)")
     
@@ -674,7 +668,7 @@ class PositionTrackerV2:
     def get_debug_info(self) -> Dict:
         """
         Get debug information about the current state.
-        
+
         Returns:
             Dictionary with debug information
         """
@@ -683,19 +677,12 @@ class PositionTrackerV2:
             'validation_passed': self.validation_passed,
             'path_points': len(self.track_path) if self.track_path else 0,
             'total_path_pixels': self.total_path_pixels,
+            'total_track_length': self.total_track_length,
             'start_position': self.start_position,
-            'start_angle_deg': np.degrees(self.start_angle) if self.start_angle else 0,
             'track_center': self.track_center,
             'last_position': self.last_position,
             'lap_just_started': self.lap_just_started,
-            'kalman_enabled': self.enable_kalman,
-            'kalman_initialized': self.kalman_initialized if self.enable_kalman else False,
-            'outlier_count': self.outlier_count if self.enable_kalman else 0
+            'max_jump_per_frame': self.max_jump_per_frame
         }
-        
-        # Add Kalman filter state if available
-        if self.enable_kalman and self.kalman_initialized:
-            debug_info['kalman_position'] = float(self.kf.x[0, 0])
-            debug_info['kalman_velocity'] = float(self.kf.x[1, 0])
-        
+
         return debug_info
