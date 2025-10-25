@@ -203,10 +203,15 @@ def main():
             if lap_detector.detect_lap_transition(lap_number, previous_lap):
                 # Lap transition detected - mark to read lap time on NEXT frame
                 frames_since_transition = 1  # Will trigger lap time read on next iteration
-                
+
                 # Reset position tracker for new lap
                 position_tracker.reset_for_new_lap()
-                
+
+                # Re-extract position with new lap start position
+                # This ensures first frame of new lap shows 0% instead of old lap's position
+                if 'track_map' in roi_dict and position_tracker.is_ready():
+                    track_position = position_tracker.extract_position(roi_dict['track_map'])
+
                 lap_transitions.append({
                     'frame': frame_num,
                     'time': timestamp,
