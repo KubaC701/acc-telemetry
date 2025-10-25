@@ -125,3 +125,6 @@ if lap_5_raw_count > 0 and lap_5_smoothed_count == 0:
     print("   C. Add special logic to flush remaining history at end of video")
     print("   D. Keep recording a few more seconds after crossing finish line")
 
+
+
+

@@ -11,7 +11,7 @@ This tool analyzes ACC gameplay videos frame-by-frame to extract:
 - **Speed** (km/h via OCR)
 - **Gear** (1-6 via OCR)
 - **Lap numbers** (via template matching)
-- **Track position** (0-100% via minimap analysis) 🆕
+- **Track position** (0-100% via minimap analysis with Kalman filtering) 🆕
 
 And generates:
 - CSV data files for analysis
@@ -172,7 +172,8 @@ If your video resolution differs:
 - **[DETAILED_ANALYSIS_GUIDE.md](docs/DETAILED_ANALYSIS_GUIDE.md)** - Detailed static visualizations guide
 
 ### Technical Guides
-- **[TRACK_POSITION_TRACKING.md](docs/TRACK_POSITION_TRACKING.md)** - How minimap-based position tracking works 🆕
+- **[KALMAN_FILTERING.md](docs/KALMAN_FILTERING.md)** - Kalman filtering for smooth position tracking 🆕
+- **[TRACK_POSITION_TRACKING.md](docs/TRACK_POSITION_TRACKING.md)** - How minimap-based position tracking works
 - **[PROJECT_SUMMARY.md](docs/PROJECT_SUMMARY.md)** - Technical overview and architecture
 
 ## 🛠️ Technical Stack
@@ -183,6 +184,7 @@ If your video resolution differs:
 - **Pandas** - Data handling and CSV export
 - **Plotly** - Interactive web-based visualizations
 - **Matplotlib** - Static high-resolution graphs
+- **FilterPy** - Kalman filtering for position tracking 🆕
 - **PyYAML** - Configuration
 
 ## 💡 How It Works

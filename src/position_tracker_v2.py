@@ -6,6 +6,7 @@ Addresses the fundamental issues with the original implementation:
 2. More robust red dot detection
 3. Proper position calculation with start line reference
 4. Better error handling and validation
+5. Kalman filtering for smooth position tracking and outlier rejection
 
 Author: ACC Telemetry Extractor
 """
@@ -13,6 +14,8 @@ Author: ACC Telemetry Extractor
 import cv2
 import numpy as np
 from typing import Optional, Tuple, List, Dict
+from filterpy.kalman import KalmanFilter
+from filterpy.common import Q_discrete_white_noise
 
 
 class PositionTrackerV2:
@@ -24,10 +27,17 @@ class PositionTrackerV2:
     - More robust red dot detection
     - Better position calculation with proper start reference
     - Comprehensive validation and error handling
+    - Kalman filtering for smooth tracking and outlier rejection
     """
     
-    def __init__(self):
-        """Initialize the improved position tracker."""
+    def __init__(self, fps: float = 30.0, enable_kalman: bool = True):
+        """
+        Initialize the improved position tracker.
+        
+        Args:
+            fps: Video frames per second (used for Kalman filter dt)
+            enable_kalman: Enable Kalman filtering (default: True)
+        """
         self.track_path: Optional[List[Tuple[int, int]]] = None
         self.total_path_pixels: int = 0  # Total number of pixels in the racing line path
         self.start_position: Optional[Tuple[int, int]] = None  # (x, y) where lap starts (set on lap change)
@@ -47,6 +57,43 @@ class PositionTrackerV2:
         self.red_upper1 = np.array([10, 255, 255])
         self.red_lower2 = np.array([170, 150, 150])
         self.red_upper2 = np.array([180, 255, 255])
+        
+        # Kalman filter setup
+        self.enable_kalman = enable_kalman
+        self.fps = fps
+        self.dt = 1.0 / fps  # Time between frames
+        self.kalman_initialized = False
+        self.outlier_threshold = 3.0  # Position jump > 3% = outlier (tightened from 10%)
+        self.outlier_count = 0
+        
+        if self.enable_kalman:
+            # Initialize 1D Kalman filter for position tracking
+            # State: [position, velocity] where velocity is %/frame
+            self.kf = KalmanFilter(dim_x=2, dim_z=1)
+            
+            # Initial state: [0% position, 0 velocity]
+            self.kf.x = np.array([[0.], [0.]])
+            
+            # State transition matrix (constant velocity model)
+            # position_new = position_old + velocity * dt
+            # velocity_new = velocity_old
+            self.kf.F = np.array([[1., self.dt],
+                                  [0., 1.]])
+            
+            # Measurement function (we only measure position directly)
+            self.kf.H = np.array([[1., 0.]])
+            
+            # Measurement uncertainty (red dot detection noise)
+            # Higher value = trust measurements less, smoother output
+            self.kf.R = np.array([[2.0]])  # 2% position uncertainty
+            
+            # Process noise (how much position changes unexpectedly)
+            # Accounts for acceleration, varying speed through corners
+            # Reduced from 1.0 to 0.3 - position is more predictable than initially assumed
+            self.kf.Q = Q_discrete_white_noise(dim=2, dt=self.dt, var=0.3)
+            
+            # Initial covariance (high uncertainty initially)
+            self.kf.P *= 100.0
     
     def extract_track_path(self, map_rois: List[np.ndarray], frequency_threshold: float = 0.6) -> bool:
         """
@@ -323,13 +370,18 @@ class PositionTrackerV2:
     
     def extract_position(self, map_roi: np.ndarray) -> float:
         """
-        Extract track position from map ROI.
+        Extract track position from map ROI with Kalman filtering.
+        
+        Uses Kalman filter to:
+        - Smooth position tracking
+        - Reject outliers (position jumps > threshold)
+        - Handle missing measurements (red dot not detected)
         
         Args:
             map_roi: Map ROI image from current frame
         
         Returns:
-            Position percentage (0.0 - 100.0)
+            Position percentage (0.0 - 100.0), filtered for smoothness
         """
         if not self.path_extracted or not self.validation_passed:
             return 0.0
@@ -337,38 +389,146 @@ class PositionTrackerV2:
         # Detect red dot
         dot_position = self.detect_red_dot(map_roi)
         
-        if dot_position is None:
-            # Red dot not detected, return last known position
-            return self.last_position
+        # Calculate raw position (if red dot detected)
+        raw_position = None
+        if dot_position is not None:
+            dot_x, dot_y = dot_position
+            
+            # If lap just started, set current position as new start point
+            if self.lap_just_started:
+                # Set the red dot position as the start position
+                self.start_position = (dot_x, dot_y)
+                
+                # Calculate the angle from track center to start position
+                dx = dot_x - self.track_center[0]
+                dy = dot_y - self.track_center[1]
+                self.start_angle = np.arctan2(dy, dx)
+                
+                self.lap_just_started = False
+                
+                start_angle_deg = np.degrees(self.start_angle)
+                print(f"      ✅ New lap start set at ({dot_x}, {dot_y}), angle: {start_angle_deg:.1f}°")
+                
+                # Reset Kalman filter for new lap
+                if self.enable_kalman:
+                    self.kf.x = np.array([[0.], [0.]])
+                    self.kf.P *= 100.0
+                    self.kalman_initialized = False
+                    self.outlier_count = 0
+                
+                # Return 0.0 for the first frame of new lap
+                self.last_position = 0.0
+                return 0.0
+            
+            # Calculate raw position normally
+            raw_position = self.calculate_position(dot_x, dot_y)
         
-        dot_x, dot_y = dot_position
+        # Apply Kalman filtering if enabled
+        if self.enable_kalman and self.start_position is not None:
+            return self._apply_kalman_filter(raw_position)
+        else:
+            # No Kalman filtering - use raw position or last position
+            if raw_position is not None:
+                self.last_position = raw_position
+                return raw_position
+            else:
+                return self.last_position
+    
+    def _apply_kalman_filter(self, measurement: Optional[float]) -> float:
+        """
+        Apply Kalman filter to position measurement with physical constraints.
+
+        Constraints enforced:
+        1. Monotonic position: Position cannot decrease (except at lap wraparound)
+        2. Positive velocity: Velocity must be >= 0 (car always moves forward)
+        3. Outlier rejection: Measurements inconsistent with prediction are rejected
+
+        Args:
+            measurement: Raw position measurement (0-100%), or None if no detection
+
+        Returns:
+            Filtered position (0-100%)
+        """
+        # Initialize Kalman filter on first valid measurement
+        if not self.kalman_initialized and measurement is not None:
+            self.kf.x = np.array([[measurement], [0.]])
+            self.kf.P *= 100.0
+            self.kalman_initialized = True
+            self.last_position = measurement
+            return measurement
+
+        # Predict next state
+        self.kf.predict()
+        predicted_position = self.kf.x[0, 0]
+
+        # CONSTRAINT 1: Enforce positive velocity (car always moves forward)
+        # Clamp velocity to minimum 0.01%/frame to prevent backward movement
+        if self.kf.x[1, 0] < 0.01:
+            self.kf.x[1, 0] = 0.01
+
+        # If we have a measurement, validate it before using
+        if measurement is not None:
+            # CONSTRAINT 2: Monotonic position check (reject significant backward measurements)
+            # Allow small backward jitter (< 0.5%) due to detection noise
+            # But reject large backward jumps which are clearly wrong
+            is_backward = False
+            backward_amount = self.last_position - measurement
+
+            if backward_amount > 0.5:  # More than 0.5% backward
+                # Check if this is lap wraparound (99% -> 0%)
+                is_wraparound = (self.last_position > 95 and measurement < 5)
+
+                if not is_wraparound:
+                    # This is significant backward movement - reject measurement
+                    is_backward = True
+                    # Only print if backward amount is significant (> 1%)
+                    if backward_amount > 1.0:
+                        print(f"      ⚠️  Large backward movement rejected: {self.last_position:.2f}% → {measurement:.2f}% (Δ={backward_amount:.2f}%)")
+
+            # If measurement is backward, skip to using prediction only
+            if is_backward:
+                filtered_position = predicted_position
+            else:
+                # CONSTRAINT 3: Outlier detection based on innovation
+                # Calculate innovation (difference between measurement and prediction)
+                innovation = abs(measurement - predicted_position)
+
+                # Handle wraparound at 0/100%
+                if innovation > 50:  # Likely wraparound
+                    if measurement < 10 and predicted_position > 90:
+                        # Wraparound from 99% -> 0%
+                        innovation = (100 - predicted_position) + measurement
+                    elif measurement > 90 and predicted_position < 10:
+                        # Wraparound from 0% -> 99% (going backwards - shouldn't happen)
+                        innovation = (100 - measurement) + predicted_position
+
+                # Outlier detection
+                if innovation > self.outlier_threshold:
+                    # Measurement is an outlier - reject it
+                    self.outlier_count += 1
+                    print(f"      ⚠️  Outlier rejected: measured {measurement:.1f}%, expected {predicted_position:.1f}%, innovation {innovation:.1f}%")
+
+                    # Use prediction only (don't update)
+                    filtered_position = predicted_position
+                else:
+                    # Measurement is valid - update Kalman filter
+                    self.kf.update(np.array([[measurement]]))
+                    filtered_position = self.kf.x[0, 0]
+
+                    # Reset outlier count on successful measurement
+                    if self.outlier_count > 0:
+                        self.outlier_count = 0
+        else:
+            # No measurement - use prediction only
+            filtered_position = predicted_position
         
-        # If lap just started, set current position as new start point
-        if self.lap_just_started:
-            # Set the red dot position as the start position
-            self.start_position = (dot_x, dot_y)
-            
-            # Calculate the angle from track center to start position
-            dx = dot_x - self.track_center[0]
-            dy = dot_y - self.track_center[1]
-            self.start_angle = np.arctan2(dy, dx)
-            
-            self.lap_just_started = False
-            
-            start_angle_deg = np.degrees(self.start_angle)
-            print(f"      ✅ New lap start set at ({dot_x}, {dot_y}), angle: {start_angle_deg:.1f}°")
-            
-            # Return 0.0 for the first frame of new lap
-            self.last_position = 0.0
-            return 0.0
-        
-        # Calculate position normally
-        position = self.calculate_position(dot_x, dot_y)
+        # Clamp to valid range
+        filtered_position = max(0.0, min(100.0, filtered_position))
         
         # Store for next frame
-        self.last_position = position
+        self.last_position = filtered_position
         
-        return position
+        return filtered_position
     
     def reset_for_new_lap(self) -> None:
         """
@@ -400,7 +560,7 @@ class PositionTrackerV2:
         Returns:
             Dictionary with debug information
         """
-        return {
+        debug_info = {
             'path_extracted': self.path_extracted,
             'validation_passed': self.validation_passed,
             'path_points': len(self.track_path) if self.track_path else 0,
@@ -409,5 +569,15 @@ class PositionTrackerV2:
             'start_angle_deg': np.degrees(self.start_angle) if self.start_angle else 0,
             'track_center': self.track_center,
             'last_position': self.last_position,
-            'lap_just_started': self.lap_just_started
+            'lap_just_started': self.lap_just_started,
+            'kalman_enabled': self.enable_kalman,
+            'kalman_initialized': self.kalman_initialized if self.enable_kalman else False,
+            'outlier_count': self.outlier_count if self.enable_kalman else 0
         }
+        
+        # Add Kalman filter state if available
+        if self.enable_kalman and self.kalman_initialized:
+            debug_info['kalman_position'] = float(self.kf.x[0, 0])
+            debug_info['kalman_velocity'] = float(self.kf.x[1, 0])
+        
+        return debug_info
