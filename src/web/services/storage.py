@@ -215,3 +215,61 @@ class StorageService:
             return None
 
         return lap_df
+
+    def get_multiple_laps_data(
+        self,
+        lap_identifiers: List[Dict[str, any]]
+    ) -> List[Dict[str, any]]:
+        """
+        Get telemetry data for multiple laps across sessions.
+
+        Args:
+            lap_identifiers: List of dicts with 'video_name' and 'lap_number'
+                Example: [{'video_name': 'video1', 'lap_number': 3}, ...]
+
+        Returns:
+            List of dicts with lap data including metadata
+            Example: [
+                {
+                    'video_name': 'video1',
+                    'lap_number': 3,
+                    'lap_time': '1:45.23',
+                    'data': [...telemetry data points...]
+                },
+                ...
+            ]
+        """
+        result = []
+
+        for identifier in lap_identifiers:
+            video_name = identifier.get('video_name')
+            lap_number = identifier.get('lap_number')
+
+            if not video_name or lap_number is None:
+                continue
+
+            # Get lap data
+            lap_df = self.get_lap_data(video_name, lap_number)
+            if lap_df is None:
+                continue
+
+            # Get metadata for lap time
+            metadata = self.load_metadata(video_name)
+            lap_time = None
+            if metadata:
+                for lap_meta in metadata.laps:
+                    if lap_meta.lap_number == lap_number:
+                        lap_time = lap_meta.lap_time
+                        break
+
+            # Convert DataFrame to list of dicts
+            lap_data_list = lap_df.to_dict(orient='records')
+
+            result.append({
+                'video_name': video_name,
+                'lap_number': lap_number,
+                'lap_time': lap_time,
+                'data': lap_data_list
+            })
+
+        return result

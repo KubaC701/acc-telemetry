@@ -1,9 +1,12 @@
 import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { VideoUpload } from './components/VideoUpload';
 import { VideoList } from './components/VideoList';
 import { JobStatus, JobsList } from './components/JobStatus';
 import { TelemetryVisualization } from './components/TelemetryVisualization';
+import { LapComparison } from './components/LapComparison';
+import { ComparisonCart } from './components/ComparisonCart';
 import { useAppStore } from './store/useAppStore';
 
 const queryClient = new QueryClient({
@@ -15,7 +18,7 @@ const queryClient = new QueryClient({
   },
 });
 
-function AppContent() {
+function TelemetryView() {
   const { selectedVideo } = useAppStore();
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
 
@@ -107,6 +110,8 @@ function AppContent() {
           </div>
         </div>
       </footer>
+
+      <ComparisonCart />
     </div>
   );
 }
@@ -114,7 +119,13 @@ function AppContent() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AppContent />
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<TelemetryView />} />
+          <Route path="/compare" element={<LapComparison />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
     </QueryClientProvider>
   );
 }

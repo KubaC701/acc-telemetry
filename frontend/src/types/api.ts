@@ -72,3 +72,25 @@ export interface ProcessResponse {
 export interface DeleteResponse {
   message: string;
 }
+
+export interface LapIdentifier {
+  video_name: string;
+  lap_number: number;
+}
+
+export interface ComparisonRequest {
+  laps: LapIdentifier[];
+}
+
+export interface LapComparisonData {
+  video_name: string;
+  lap_number: number;
+  lap_time: string | null;
+  data: TelemetryData[];
+}
+
+export interface ComparisonCartItem {
+  videoName: string;
+  lapNumber: number;
+  lapTime: string | null;
+}

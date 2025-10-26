@@ -7,7 +7,13 @@ import pandas as pd
 import numpy as np
 import io
 
-from ..models import LapMetadata, TelemetryDataPoint
+from ..models import (
+    LapMetadata,
+    TelemetryDataPoint,
+    ComparisonRequest,
+    LapComparisonData,
+    LapIdentifier
+)
 from ..services.storage import StorageService
 
 router = APIRouter()
@@ -169,3 +175,60 @@ async def get_telemetry_summary(video_name: str):
     summary = visualizer.generate_summary(df)
 
     return summary
+
+
+@router.post("/compare", response_model=List[LapComparisonData])
+async def compare_laps(request: ComparisonRequest):
+    """
+    Compare multiple laps across sessions.
+
+    Args:
+        request: ComparisonRequest with list of lap identifiers
+
+    Returns:
+        List of LapComparisonData with telemetry for each lap
+
+    Raises:
+        HTTPException: If fewer than 2 laps provided or laps not found
+    """
+    if len(request.laps) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="At least 2 laps required for comparison"
+        )
+
+    if len(request.laps) > 10:
+        raise HTTPException(
+            status_code=400,
+            detail="Maximum 10 laps allowed for comparison"
+        )
+
+    # Convert Pydantic models to dicts for storage service
+    lap_identifiers = [
+        {'video_name': lap.video_name, 'lap_number': lap.lap_number}
+        for lap in request.laps
+    ]
+
+    # Get lap data
+    laps_data = storage.get_multiple_laps_data(lap_identifiers)
+
+    if len(laps_data) < 2:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Could not find enough laps. Found {len(laps_data)} of {len(request.laps)} requested laps."
+        )
+
+    # Clean and convert to response format
+    result = []
+    for lap_data in laps_data:
+        # Clean telemetry data
+        cleaned_data = clean_telemetry_for_json(pd.DataFrame(lap_data['data']))
+
+        result.append(LapComparisonData(
+            video_name=lap_data['video_name'],
+            lap_number=lap_data['lap_number'],
+            lap_time=lap_data['lap_time'],
+            data=cleaned_data
+        ))
+
+    return result
