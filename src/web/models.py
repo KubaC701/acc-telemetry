@@ -68,3 +68,22 @@ class VideoListItem(BaseModel):
     duration: float
     processed_at: str
     fps: float
+
+
+class LapIdentifier(BaseModel):
+    """Identifier for a specific lap in a session."""
+    video_name: str
+    lap_number: int
+
+
+class ComparisonRequest(BaseModel):
+    """Request to compare multiple laps."""
+    laps: List[LapIdentifier] = Field(..., description="List of laps to compare (2-10 laps)")
+
+
+class LapComparisonData(BaseModel):
+    """Telemetry data for a single lap in comparison."""
+    video_name: str
+    lap_number: int
+    lap_time: Optional[str] = None
+    data: List[TelemetryDataPoint]

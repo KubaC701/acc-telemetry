@@ -8,6 +8,9 @@ import type {
   VideoProcessRequest,
   ProcessResponse,
   DeleteResponse,
+  LapIdentifier,
+  ComparisonRequest,
+  LapComparisonData,
 } from '../types/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -61,6 +64,13 @@ export const telemetryApi = {
 
   downloadCsv: (videoName: string): string => {
     return `${API_BASE_URL}/api/telemetry/${videoName}/csv`;
+  },
+
+  compareLaps: async (lapIdentifiers: LapIdentifier[]): Promise<LapComparisonData[]> => {
+    const response = await api.post<LapComparisonData[]>('/api/telemetry/compare', {
+      laps: lapIdentifiers,
+    } as ComparisonRequest);
+    return response.data;
   },
 };
 

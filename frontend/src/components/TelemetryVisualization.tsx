@@ -4,11 +4,23 @@ import Plot from 'react-plotly.js';
 import { telemetryApi } from '../lib/api';
 import { useAppStore } from '../store/useAppStore';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/Card';
+import { Checkbox } from './ui/Checkbox';
+import { Badge } from './ui/Badge';
+import { SessionBrowser } from './SessionBrowser';
 import type { TelemetryData } from '../types/api';
 
 export function TelemetryVisualization() {
-  const { selectedVideo, selectedLap, setSelectedLap } = useAppStore();
+  const {
+    selectedVideo,
+    selectedLap,
+    setSelectedLap,
+    addToComparison,
+    removeFromComparison,
+    isInComparison,
+    comparisonCart
+  } = useAppStore();
   const [viewMode, setViewMode] = useState<'all' | 'lap'>('all');
+  const [showSessionBrowser, setShowSessionBrowser] = useState(false);
 
   const { data: allTelemetry, isLoading: isLoadingAll } = useQuery({
     queryKey: ['telemetry', selectedVideo?.video_name],
@@ -62,7 +74,8 @@ export function TelemetryVisualization() {
     );
   }
 
-  if (!telemetryData || telemetryData.length === 0) {
+  // Only show "no data" error if we're in "all laps" mode and have no data
+  if (viewMode === 'all' && (!telemetryData || telemetryData.length === 0)) {
     return (
       <Card>
         <CardContent>
@@ -74,7 +87,11 @@ export function TelemetryVisualization() {
     );
   }
 
-  const timestamps = telemetryData.map((d) => d.time);
+  // If we have no telemetry data at all and we're past loading, show error
+  // This handles the case where a specific lap was selected but returned no data
+  const hasData = telemetryData && telemetryData.length > 0;
+
+  const timestamps = hasData ? telemetryData.map((d) => d.time) : [];
 
   // Calculate subplot domains (8 subplots with equal spacing)
   const subplotHeight = 0.11; // 11% height per subplot
@@ -333,32 +350,86 @@ export function TelemetryVisualization() {
 
         {viewMode === 'lap' && laps && laps.length > 0 && (
           <CardContent className="border-t">
-            <div className="flex items-center gap-4">
-              <label className="text-sm font-medium text-gray-700">
-                Select Lap:
-              </label>
-              <select
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={selectedLap || ''}
-                onChange={(e) => setSelectedLap(Number(e.target.value))}
-              >
-                <option value="">Choose a lap...</option>
-                {laps.map((lap) => (
-                  <option key={lap.lap_number} value={lap.lap_number}>
-                    Lap {lap.lap_number} - {lap.lap_time}
-                  </option>
-                ))}
-              </select>
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4 flex-1">
+                <label className="text-sm font-medium text-gray-700">
+                  Select Lap:
+                </label>
+                <select
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={selectedLap || ''}
+                  onChange={(e) => setSelectedLap(Number(e.target.value))}
+                >
+                  <option value="">Choose a lap...</option>
+                  {laps.map((lap) => (
+                    <option key={lap.lap_number} value={lap.lap_number}>
+                      Lap {lap.lap_number} - {lap.lap_time}
+                    </option>
+                  ))}
+                </select>
+
+                {selectedLap && selectedVideo && (
+                  <Checkbox
+                    checked={isInComparison(selectedVideo.video_name, selectedLap)}
+                    onChange={(checked) => {
+                      if (checked) {
+                        const lap = laps.find(l => l.lap_number === selectedLap);
+                        if (lap) {
+                          if (comparisonCart.length >= 10) {
+                            alert('Maximum 10 laps allowed in comparison cart');
+                            return;
+                          }
+                          addToComparison({
+                            videoName: selectedVideo.video_name,
+                            lapNumber: selectedLap,
+                            lapTime: lap.lap_time || null,
+                          });
+                        }
+                      } else {
+                        removeFromComparison(selectedVideo.video_name, selectedLap);
+                      }
+                    }}
+                    label="Add to comparison"
+                  />
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                {comparisonCart.length > 0 && (
+                  <Badge variant="primary" size="sm">
+                    {comparisonCart.length} in cart
+                  </Badge>
+                )}
+                <button
+                  onClick={() => setShowSessionBrowser(true)}
+                  className="px-3 py-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                >
+                  Browse Sessions
+                </button>
+              </div>
             </div>
           </CardContent>
         )}
       </Card>
+
+      <SessionBrowser
+        isOpen={showSessionBrowser}
+        onClose={() => setShowSessionBrowser(false)}
+      />
 
       {viewMode === 'lap' && !selectedLap ? (
         <Card>
           <CardContent>
             <p className="text-gray-500 text-center py-8">
               Select a lap to view detailed telemetry
+            </p>
+          </CardContent>
+        </Card>
+      ) : !hasData ? (
+        <Card>
+          <CardContent>
+            <p className="text-gray-500 text-center py-8">
+              No telemetry data available for this selection
             </p>
           </CardContent>
         </Card>
