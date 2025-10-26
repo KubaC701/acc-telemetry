@@ -214,7 +214,53 @@ class PositionTrackerV2:
         print(f"      ✅ Total racing line pixels: {self.total_path_pixels}")
         print(f"      ✅ Total track arc length: {self.total_track_length:.1f} pixels")
         print(f"      ✅ Track center: ({center_x:.1f}, {center_y:.1f})")
-        print(f"      ℹ️  Start position will be set on first lap change")
+
+        # STEP 5.5: Detect start/finish line geometrically
+        print(f"   Step 5.5: Detecting start/finish line...")
+        start_line_idx, start_line_confidence, deviations = self._detect_start_finish_line()
+
+        if start_line_idx is not None:
+            print(f"      ✅ Start/finish line detected at index {start_line_idx} (confidence: {start_line_confidence:.2f})")
+            self.start_idx = start_line_idx
+            self.start_position = self.track_path[start_line_idx]
+            print(f"      ✅ Start position set to {self.start_position}")
+
+            # STEP 5.6: Clean racing line by removing start/finish artifact
+            print(f"   Step 5.6: Cleaning racing line (removing start/finish protrusion)...")
+            cleaned_path = self._clean_start_line_artifact(start_line_idx, deviations)
+
+            if cleaned_path is not None:
+                # Update path and recalculate metrics
+                old_length = len(self.track_path)
+                self.track_path = cleaned_path
+                self.total_path_pixels = len(cleaned_path)
+
+                # Recalculate total track length
+                self.total_track_length = 0.0
+                for i in range(len(self.track_path)):
+                    p1 = self.track_path[i]
+                    p2 = self.track_path[(i + 1) % len(self.track_path)]
+                    dx = p2[0] - p1[0]
+                    dy = p2[1] - p1[1]
+                    self.total_track_length += np.sqrt(dx*dx + dy*dy)
+
+                # Update start_idx (it may have shifted slightly)
+                # Find the point closest to the original start_position
+                min_dist = float('inf')
+                for i, pt in enumerate(self.track_path):
+                    dx = pt[0] - self.start_position[0]
+                    dy = pt[1] - self.start_position[1]
+                    dist = dx*dx + dy*dy
+                    if dist < min_dist:
+                        min_dist = dist
+                        self.start_idx = i
+
+                print(f"      ✅ Removed {old_length - len(cleaned_path)} artifact points")
+                print(f"      ✅ New track length: {self.total_track_length:.1f} pixels")
+                print(f"      ✅ Updated start_idx: {self.start_idx}")
+        else:
+            print(f"      ⚠️  Could not detect start/finish line geometrically")
+            print(f"      ℹ️  Start position will be set on first lap change")
         
         # STEP 6: Validate extraction
         print(f"   Step 6: Validating path extraction...")
@@ -232,6 +278,213 @@ class PositionTrackerV2:
         return True
     
     
+    def _detect_start_finish_line(self) -> Tuple[Optional[int], float, Optional[np.ndarray]]:
+        """
+        Detect the start/finish line by finding perpendicular protrusions on the racing line.
+
+        The start/finish line in ACC appears as a white perpendicular marker (~15px width)
+        that creates a geometric anomaly on the racing line - a sharp protrusion perpendicular
+        to the natural track curvature.
+
+        Algorithm:
+        1. Calculate local tangent direction for each point (using moving average)
+        2. Calculate perpendicular direction at each point
+        3. For each point, measure how far it deviates from the smooth racing line
+        4. Find the point with maximum perpendicular deviation (the start/finish marker)
+
+        Returns:
+            Tuple of (index of start line, confidence score 0-1, deviations array),
+            or (None, 0.0, None) if not detected
+        """
+        if not self.track_path or len(self.track_path) < 50:
+            return None, 0.0, None
+
+        path_array = np.array(self.track_path, dtype=np.float32)
+        num_points = len(path_array)
+
+        # STEP 1: Calculate smoothed tangent direction at each point
+        # Use moving average of 10 points before and after to smooth out noise
+        tangent_window = 10
+        tangents = np.zeros((num_points, 2), dtype=np.float32)
+
+        for i in range(num_points):
+            # Get points before and after (with wraparound)
+            idx_before = (i - tangent_window) % num_points
+            idx_after = (i + tangent_window) % num_points
+
+            # Calculate tangent direction
+            dx = path_array[idx_after, 0] - path_array[idx_before, 0]
+            dy = path_array[idx_after, 1] - path_array[idx_before, 1]
+
+            # Normalize
+            length = np.sqrt(dx*dx + dy*dy)
+            if length > 0:
+                tangents[i] = [dx / length, dy / length]
+
+        # STEP 2: Calculate distance from each point to the "smooth" racing line
+        # The smooth line is defined by connecting points 20 indices apart
+        # A perpendicular protrusion will be far from this smooth line
+        smooth_window = 20
+        deviations = np.zeros(num_points, dtype=np.float32)
+
+        for i in range(num_points):
+            # Get the smooth line segment that should pass through this region
+            idx_before = (i - smooth_window) % num_points
+            idx_after = (i + smooth_window) % num_points
+
+            p_before = path_array[idx_before]
+            p_after = path_array[idx_after]
+            p_current = path_array[i]
+
+            # Calculate perpendicular distance from current point to line segment
+            # Line from p_before to p_after
+            line_vec = p_after - p_before
+            line_length = np.linalg.norm(line_vec)
+
+            if line_length > 0:
+                line_vec_normalized = line_vec / line_length
+
+                # Vector from p_before to current point
+                to_point = p_current - p_before
+
+                # Project onto line to find closest point on line
+                projection_length = np.dot(to_point, line_vec_normalized)
+                projection_length = np.clip(projection_length, 0, line_length)
+
+                closest_on_line = p_before + line_vec_normalized * projection_length
+
+                # Distance from current point to closest point on smooth line
+                deviation = np.linalg.norm(p_current - closest_on_line)
+                deviations[i] = deviation
+
+        # STEP 3: Find start/finish line in the top-left region
+        # The start/finish line is typically at the top-left of the minimap
+        # We'll look for perpendicular protrusions in that region specifically
+
+        # Strategy: Find the point with minimum y-coordinate (top of map) that also has
+        # significant perpendicular deviation
+
+        # First, identify the top-left region (lowest y-coordinates)
+        y_coords = path_array[:, 1]
+        min_y = np.min(y_coords)
+        y_threshold = min_y + 30  # Look within 30 pixels of the top
+
+        # Find all points in the top region
+        top_region_mask = y_coords <= y_threshold
+        top_region_indices = np.where(top_region_mask)[0]
+
+        if len(top_region_indices) == 0:
+            print(f"      ⚠️  No points found in top region (y < {y_threshold})")
+            return None, 0.0, None
+
+        # Among top region points, find the one with maximum deviation (perpendicular protrusion)
+        top_region_deviations = deviations[top_region_indices]
+        max_deviation_in_top_idx = np.argmax(top_region_deviations)
+        start_line_idx = top_region_indices[max_deviation_in_top_idx]
+        max_deviation = deviations[start_line_idx]
+
+        print(f"      🔍 Searching top region: y < {y_threshold:.1f}, found {len(top_region_indices)} points")
+        print(f"      🔍 Max deviation in top region: {max_deviation:.2f} at index {start_line_idx}")
+
+        # STEP 4: Validate the detection
+        # The start line should have:
+        # - Significant deviation (>3 pixels from smooth line - lowered threshold)
+        # - Be in the top region of the map
+
+        if max_deviation < 3.0:
+            # Deviation too small - probably no start line protrusion
+            print(f"      ⚠️  Max deviation {max_deviation:.2f} too small (< 3.0)")
+            return None, 0.0, None
+
+        # Check that it's a reasonably clear local maximum
+        max_window = 15
+        nearby_range = range(max(0, start_line_idx - max_window),
+                            min(num_points, start_line_idx + max_window))
+        nearby_deviations = [deviations[j] for j in nearby_range if j != start_line_idx]
+
+        if nearby_deviations:
+            avg_nearby = np.mean(nearby_deviations)
+            prominence = max_deviation / (avg_nearby + 1e-6)  # Avoid division by zero
+
+            # Lower prominence threshold since we're already restricting to top region
+            if prominence < 1.2:
+                print(f"      ⚠️  Prominence {prominence:.2f} too low (< 1.2)")
+                return None, 0.0, None
+
+            # Calculate confidence based on deviation magnitude and prominence
+            confidence = min(1.0, (max_deviation / 15.0) * (prominence / 2.5))
+        else:
+            confidence = min(1.0, max_deviation / 15.0)
+
+        return start_line_idx, confidence, deviations
+
+    def _clean_start_line_artifact(self, start_line_idx: int, deviations: np.ndarray) -> Optional[List[Tuple[int, int]]]:
+        """
+        Remove the start/finish line protrusion from the racing line.
+
+        The start line creates a perpendicular protrusion on the racing line.
+        We want to remove these artifact points and smooth the racing line.
+
+        Algorithm:
+        1. Find the region of high deviation around start_line_idx
+        2. Remove points in this region
+        3. Interpolate to connect the gap smoothly
+
+        Args:
+            start_line_idx: Index of the start/finish line peak
+            deviations: Array of deviation values for each point
+
+        Returns:
+            Cleaned track path, or None if cleaning fails
+        """
+        if not self.track_path or deviations is None:
+            return None
+
+        # STEP 1: Find the extent of the protrusion
+        # Points with deviation > threshold are part of the start line artifact
+        deviation_threshold = deviations[start_line_idx] * 0.5  # 50% of peak
+
+        # Find continuous region of high deviation around start_line_idx
+        artifact_start = start_line_idx
+        artifact_end = start_line_idx
+
+        # Search backward
+        for i in range(start_line_idx - 1, max(0, start_line_idx - 30), -1):
+            if deviations[i] < deviation_threshold:
+                artifact_start = i + 1
+                break
+        else:
+            artifact_start = max(0, start_line_idx - 30)
+
+        # Search forward
+        for i in range(start_line_idx + 1, min(len(self.track_path), start_line_idx + 30)):
+            if deviations[i] < deviation_threshold:
+                artifact_end = i - 1
+                break
+        else:
+            artifact_end = min(len(self.track_path) - 1, start_line_idx + 30)
+
+        # STEP 2: Remove artifact points
+        # Keep points before and after the artifact
+        cleaned_path = []
+
+        # Add all points before artifact
+        for i in range(artifact_start):
+            cleaned_path.append(self.track_path[i])
+
+        # Skip artifact region (artifact_start to artifact_end inclusive)
+
+        # Add all points after artifact
+        for i in range(artifact_end + 1, len(self.track_path)):
+            cleaned_path.append(self.track_path[i])
+
+        # STEP 3: Validate cleaned path
+        if len(cleaned_path) < 50:
+            print(f"      ⚠️  Cleaned path too short ({len(cleaned_path)} points)")
+            return None
+
+        return cleaned_path
+
     def _validate_path_extraction(self) -> bool:
         """
         Validate that the extracted path makes sense.
@@ -496,11 +749,58 @@ class PositionTrackerV2:
             cv2.putText(debug_img, str(i), (pt[0] + 5, pt[1] + 5),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 1)
 
+        # Highlight start/finish line if detected
+        if self.start_idx is not None and self.start_position is not None:
+            start_pt = self.start_position
+            # Draw large red circle at start position
+            cv2.circle(debug_img, start_pt, 8, (0, 0, 255), 3)
+            cv2.circle(debug_img, start_pt, 2, (255, 255, 255), -1)
+
+            # Draw a perpendicular line to visualize the start/finish line
+            # Get tangent direction at start point
+            idx_before = (self.start_idx - 5) % len(self.track_path)
+            idx_after = (self.start_idx + 5) % len(self.track_path)
+            pt_before = self.track_path[idx_before]
+            pt_after = self.track_path[idx_after]
+
+            # Tangent direction
+            tang_x = pt_after[0] - pt_before[0]
+            tang_y = pt_after[1] - pt_before[1]
+            tang_len = np.sqrt(tang_x**2 + tang_y**2)
+
+            if tang_len > 0:
+                tang_x /= tang_len
+                tang_y /= tang_len
+
+                # Perpendicular direction (rotate 90 degrees)
+                perp_x = -tang_y
+                perp_y = tang_x
+
+                # Draw perpendicular line from start point
+                line_length = 15
+                end_pt1 = (int(start_pt[0] + perp_x * line_length),
+                          int(start_pt[1] + perp_y * line_length))
+                end_pt2 = (int(start_pt[0] - perp_x * line_length),
+                          int(start_pt[1] - perp_y * line_length))
+
+                cv2.line(debug_img, end_pt1, end_pt2, (0, 0, 255), 3)
+
+            # Add label
+            cv2.putText(debug_img, "START/FINISH", (start_pt[0] + 10, start_pt[1] - 10),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
+
         # Add info text
-        cv2.putText(debug_img, f"Total points: {len(self.track_path)}", (5, 15),
+        y_offset = 15
+        cv2.putText(debug_img, f"Total points: {len(self.track_path)}", (5, y_offset),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
-        cv2.putText(debug_img, f"Total pixels: {self.total_path_pixels}", (5, 30),
+        y_offset += 15
+        cv2.putText(debug_img, f"Total pixels: {self.total_path_pixels}", (5, y_offset),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
+
+        if self.start_idx is not None:
+            y_offset += 15
+            cv2.putText(debug_img, f"Start/Finish: idx={self.start_idx}", (5, y_offset),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
 
         # Save to data/output/
         output_dir = "data/output"
@@ -594,16 +894,19 @@ class PositionTrackerV2:
     def reset_for_new_lap(self) -> None:
         """
         Reset position tracking for a new lap.
-        
-        This method MUST be called on the FIRST frame after a lap number change.
-        It sets the current red dot position as the new start position (pixel index 0).
-        
-        The next call to extract_position() will detect the red dot and use that
-        pixel index as the new start_pixel_index.
+
+        If start/finish line was detected geometrically, this just resets the position to 0%.
+        If no geometric detection occurred, it will set the start position on the next frame.
         """
-        # Set flag to capture start position on next detection
-        self.lap_just_started = True
-        print(f"      🏁 Lap reset triggered - next detected position will be new start (0%)")
+        if self.start_idx is not None and self.start_position is not None:
+            # Start line already detected geometrically - just reset position counter
+            print(f"      🏁 Lap reset triggered - using geometric start line at idx {self.start_idx}")
+            self.last_position = 0.0
+            # Do NOT set lap_just_started - we keep the geometric start position
+        else:
+            # No geometric detection - fall back to red dot detection on next frame
+            self.lap_just_started = True
+            print(f"      🏁 Lap reset triggered - will capture start position on next frame")
     
     def is_ready(self) -> bool:
         """

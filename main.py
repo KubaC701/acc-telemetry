@@ -78,7 +78,7 @@ def main():
     total_start_time = time.time()
     
     # Configuration
-    VIDEO_PATH = './panorama.mp4'  # Full race video for testing
+    VIDEO_PATH = './panorama-training-2025-10-26.mp4'  # Full race video for testing
     CONFIG_PATH = 'config/roi_config.yaml'
     
     print("=" * 60)
