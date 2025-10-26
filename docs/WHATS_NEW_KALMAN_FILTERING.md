@@ -1,8 +1,20 @@
-# What's New: Kalman Filtering for Position Tracking
+# What's New: Kalman Filtering for Position Tracking - [DEPRECATED]
 
-## Summary
+## ⚠️ IMPORTANT: This Feature Was Later Replaced
 
-Added **Kalman filtering** to the position tracking system to eliminate single-frame glitches and provide smooth, reliable position data. This solves the problem of false time delta spikes in lap comparisons.
+**Status:** This document describes a Kalman filtering feature that was **implemented, tested, and later replaced** with a simpler approach.
+
+**Current implementation:** The project now uses basic forward-progress validation in `PositionTrackerV2` instead of Kalman filtering.
+
+**Why replaced:** While Kalman filtering worked well, it added unnecessary complexity. A simpler `max_jump_per_frame` threshold proved equally effective for rejecting outliers while being more maintainable.
+
+**Historical context:** This document is preserved to show the development process and explain the evolution of the position tracking system.
+
+---
+
+## Summary (Historical)
+
+An experimental implementation added **Kalman filtering** to the position tracking system to eliminate single-frame glitches and provide smooth, reliable position data. This was intended to solve the problem of false time delta spikes in lap comparisons.
 
 ## The Problem We Solved
 
@@ -326,5 +338,21 @@ Now available for console sim racing telemetry analysis! 🏎️
 
 ---
 
-**With Kalman filtering, your lap comparisons are now as reliable as professional motorsport telemetry systems!** 🎯
+## Final Note: Evolution to Simpler Approach
+
+**Historical outcome:** While Kalman filtering was successfully implemented and proved effective, the project later moved to a simpler outlier rejection method.
+
+**Current approach (PositionTrackerV2):**
+- Uses `max_jump_per_frame` parameter (default: 1.0%)
+- Rejects position jumps exceeding the threshold
+- Simpler implementation, no FilterPy dependency needed in practice
+- Equally effective for the use case (post-processing video telemetry)
+
+**Lessons learned:**
+- Kalman filtering is powerful and works well
+- However, "good enough" solutions with lower complexity are often preferable
+- The simpler approach achieved the same practical goal without state estimation overhead
+- This is a common pattern in software development: try sophisticated solutions, then simplify
+
+**This document is preserved** to document the development journey and explain why different approaches were explored.
 

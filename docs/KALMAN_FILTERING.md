@@ -1,8 +1,20 @@
-# Kalman Filtering for Position Tracking
+# Kalman Filtering for Position Tracking - [DEPRECATED]
 
-## Overview
+## ⚠️ IMPORTANT: This Approach Was Abandoned
 
-The position tracking system now includes **Kalman filtering** to eliminate glitches and smooth position data. This addresses the issue of single-frame position errors that cause false spikes in lap comparison visualizations.
+**Status:** This document describes an experimental Kalman filtering implementation that was **later replaced** with a simpler approach.
+
+**Current implementation:** The project now uses basic forward-progress validation (`max_jump_per_frame` threshold) instead of Kalman filtering. See `PositionTrackerV2` class for the current implementation.
+
+**Why abandoned:** Kalman filtering added unnecessary complexity for minimal benefit. A simple outlier rejection based on maximum allowed jump per frame proved sufficient and more maintainable.
+
+**Historical context:** This document is preserved to document the development process and explain why this approach was tried and ultimately discarded.
+
+---
+
+## Overview (Historical)
+
+An experimental implementation included **Kalman filtering** to eliminate glitches and smooth position data. This was intended to address single-frame position errors that cause false spikes in lap comparison visualizations.
 
 ## The Problem
 
@@ -266,7 +278,21 @@ Potential improvements:
 
 ---
 
-**Kalman filtering makes position tracking production-ready!** 🎯
+## Final Note: Why This Approach Was Replaced
 
-Single-frame glitches no longer affect your lap comparisons. The filtered data is smooth, reliable, and ready for serious analysis.
+**Kalman filtering was successfully implemented and tested**, but ultimately replaced with a simpler approach in `PositionTrackerV2`.
+
+**Current implementation:** Simple forward-progress validation using `max_jump_per_frame` threshold (default: 1.0%)
+- Rejects position jumps larger than 1% per frame
+- Much simpler than full Kalman filter (no state estimation, prediction, covariance matrices)
+- Equally effective for rejecting single-frame glitches
+- More maintainable and easier to understand
+
+**What we learned:**
+- Kalman filtering works well and is production-ready
+- However, for post-processing video telemetry, simpler outlier rejection is sufficient
+- The added complexity of Kalman filtering wasn't justified by the marginal improvement
+- "Simplicity is the ultimate sophistication" - sometimes the simple solution is better
+
+**This document is preserved** to show the development process and explain why various approaches were tried and what we learned from each experiment.
 

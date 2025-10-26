@@ -93,19 +93,22 @@ white_frequency = np.sum(mask_stack > 0, axis=2) / len(white_masks)
 
 ### Step 4: Threshold by Frequency
 
-Keep only pixels that are white in ≥60% of frames:
+Keep only pixels that are white in ≥45% of frames:
 
 ```python
-frequency_threshold = 0.6  # 60%
+frequency_threshold = 0.45  # 45% (current default in PositionTrackerV2)
 racing_line_raw = (white_frequency >= frequency_threshold).astype(np.uint8) * 255
 ```
 
-**Why 60%?**
-- Racing line should be white in ~100% of frames
-- 60% threshold allows for minor occlusions (red dot briefly covering line)
-- Filters out red dot (appears in <10% of frames per position)
-- Filters out varying backgrounds (inconsistent)
-- **Result**: Complete racing line outline! ✅
+**Why 45%? (Updated from original 60%)**
+- Racing line should be white in ~100% of frames in bright sections
+- However, darker track sections may show lower consistency (87-90%)
+- 45% threshold captures both bright and dark racing line segments
+- Still effectively filters out red dot (appears in <10% of frames per position)
+- Still filters out varying backgrounds (inconsistent)
+- **Result**: More complete racing line outline, especially in darker sections! ✅
+
+**Historical note:** Originally used 60%, but testing revealed this was too strict and missed darker sections of the racing line. The threshold was lowered to 45% to capture the full path while still rejecting artifacts.
 
 ### Step 5: Remove Small Artifacts (Dilate-Filter-Erode)
 
@@ -174,7 +177,8 @@ The extracted racing line is used by `PositionTrackerV2`:
 tracker = PositionTrackerV2()
 
 # Extract racing line once at the start (sample 50 frames)
-success = tracker.extract_track_path(map_rois, frequency_threshold=0.6)
+# Default frequency_threshold is 0.45 (45%)
+success = tracker.extract_track_path(map_rois, frequency_threshold=0.45)
 
 # Then track position in each frame
 for frame in video:
@@ -218,7 +222,7 @@ We tested several other approaches before finding the optimal solution:
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
 | `num_samples` | 50 | Good balance of speed vs. accuracy |
-| `frequency_threshold` | 0.6 (60%) | Catches racing line, filters noise |
+| `frequency_threshold` | 0.45 (45%) | Catches full racing line including darker sections, filters noise |
 | `dilate_kernel` | 5×5 ellipse | Connects segments without over-growing |
 | `dilate_iterations` | 2 | Sufficient to connect racing line into one blob |
 | `erode_iterations` | 2 | Restores original thickness |
@@ -227,10 +231,13 @@ We tested several other approaches before finding the optimal solution:
 
 | Threshold | Effect | Use Case |
 |-----------|--------|----------|
-| 50% | More permissive, captures more pixels | If racing line has gaps |
-| **60%** | **Optimal balance** | **Default - works well** |
-| 70% | Stricter, cleaner but may miss parts | If getting too many artifacts |
-| 80%+ | Very strict, may lose racing line | Not recommended |
+| 40% | Very permissive, may capture some artifacts | If racing line has many gaps |
+| **45%** | **Optimal balance** | **Current default - captures full racing line** |
+| 50% | Slightly stricter, may miss darker sections | If getting artifacts |
+| 60% | Strict, works for bright racing lines only | Original default (too strict for some tracks) |
+| 70%+ | Very strict, will likely miss parts | Not recommended |
+
+**Note:** The default was changed from 60% to 45% after discovering that darker sections of the racing line (with lower HSV Value) were being missed at the higher threshold.
 
 ## Implementation Details
 
@@ -284,6 +291,8 @@ On a typical system:
 ---
 
 *Developed through extensive testing and iteration. See `extract_racing_line_final.py` for standalone implementation.*
+
+
 
 
 
