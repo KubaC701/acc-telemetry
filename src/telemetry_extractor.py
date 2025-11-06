@@ -48,16 +48,18 @@ class TelemetryExtractor:
         elif target_color == 'red':
             # Red, Orange, Yellow color ranges (brake bar changes when ABS activates)
             # Red range (HSV red wraps around at 0/180)
-            lower_red1 = np.array([0, 100, 100])
+            # ADJUSTED: Lowered V threshold from 100 → 50 to detect dim brake bars
+            lower_red1 = np.array([0, 100, 50])
             upper_red1 = np.array([10, 255, 255])
             mask_red1 = cv2.inRange(hsv, lower_red1, upper_red1)
-            
-            lower_red2 = np.array([170, 100, 100])
+
+            lower_red2 = np.array([170, 100, 50])
             upper_red2 = np.array([180, 255, 255])
             mask_red2 = cv2.inRange(hsv, lower_red2, upper_red2)
-            
+
             # Orange/Yellow range (when ABS active)
-            lower_orange = np.array([10, 100, 100])
+            # ADJUSTED: Lowered V threshold from 100 → 50 for consistency
+            lower_orange = np.array([10, 100, 50])
             upper_orange = np.array([40, 255, 255])
             mask_orange = cv2.inRange(hsv, lower_orange, upper_orange)
             
@@ -97,27 +99,47 @@ class TelemetryExtractor:
         else:  # horizontal
             # Sample middle rows to avoid edge artifacts
             middle_rows = mask[height//3:2*height//3, :]
-            
-            # Find rightmost filled pixel for each row
+
+            # Find the continuous filled region from the left edge
+            # This handles text overlays and gaps by detecting the main bar fill
             filled_widths = []
             for row in middle_rows:
                 non_zero_cols = np.where(row > 0)[0]
-                if len(non_zero_cols) > 0:
-                    filled_widths.append(non_zero_cols[-1] + 1)
-            
+                if len(non_zero_cols) == 0:
+                    continue
+
+                # Find the longest continuous run starting from near the left edge
+                # The bar fills from left to right, so we want the leftmost continuous region
+                max_continuous_width = 0
+                current_run_start = None
+                current_run_length = 0
+
+                for i, col in enumerate(non_zero_cols):
+                    if current_run_start is None:
+                        # Start new run
+                        current_run_start = col
+                        current_run_length = 1
+                    elif col == non_zero_cols[i-1] + 1:
+                        # Continue existing run (consecutive pixel)
+                        current_run_length += 1
+                    else:
+                        # Gap detected - save previous run if it's the best so far
+                        if current_run_length > max_continuous_width:
+                            max_continuous_width = current_run_length
+                        # Start new run
+                        current_run_start = col
+                        current_run_length = 1
+
+                # Don't forget the last run
+                if current_run_length > max_continuous_width:
+                    max_continuous_width = current_run_length
+
+                if max_continuous_width > 0:
+                    filled_widths.append(max_continuous_width)
+
             if not filled_widths:
                 return 0.0
-            
-            # Check if enough pixels detected to be real bar vs noise
-            # For horizontal bars, we need substantial pixel count
-            total_detected_pixels = np.count_nonzero(mask)
-            min_pixels_threshold = 150  # Minimum pixels to consider valid detection
-                                        # Raised from 50 to 150 to filter out false throttle blips
-            
-            if total_detected_pixels < min_pixels_threshold:
-                # Too few pixels - likely noise/text artifacts, not actual bar
-                return 0.0
-            
+
             # Use median to avoid outliers
             filled_width = np.median(filled_widths)
             percentage = (filled_width / width) * 100.0
@@ -141,9 +163,10 @@ class TelemetryExtractor:
             
         # Convert to grayscale
         gray = cv2.cvtColor(roi_image, cv2.COLOR_BGR2GRAY)
-        
+
         # Threshold to find bright white pixels (the dot)
-        _, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
+        # Adjusted: 180 threshold (was 200) to catch slightly dimmer dots in different videos
+        _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
         
         # Find contours/bright regions
         contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -153,18 +176,19 @@ class TelemetryExtractor:
         
         # Filter contours to find the steering dot
         # The steering dot should be:
-        # 1. Small to medium size (5-50 pixels) - steering dot is compact
+        # 1. Small to medium size (3-100 pixels) - steering dot is compact
         # 2. Compact (roughly square, not elongated text)
         # 3. Located in the bottom half of ROI (scale line is at bottom)
         height = roi_image.shape[0]
         width = roi_image.shape[1]
-        
+
         dot_candidates = []
         for contour in contours:
             area = cv2.contourArea(contour)
-            
+
             # Filter by area (steering dot is small, text is larger)
-            if not (5 < area < 50):
+            # Adjusted: 3-100 pixels (was 5-50) to catch smaller dots in different videos
+            if not (3 <= area < 100):
                 continue
             
             # Get bounding box
@@ -271,9 +295,10 @@ class TelemetryExtractor:
         
         # Convert to HSV for color detection
         hsv = cv2.cvtColor(roi_image, cv2.COLOR_BGR2HSV)
-        
+
         # Orange/Yellow range (same as used in extract_bar_percentage for ABS detection)
-        lower_orange = np.array([10, 100, 100])
+        # ADJUSTED: Lowered V threshold from 100 → 50 to detect dim ABS activation
+        lower_orange = np.array([10, 100, 50])
         upper_orange = np.array([40, 255, 255])
         mask_orange = cv2.inRange(hsv, lower_orange, upper_orange)
         

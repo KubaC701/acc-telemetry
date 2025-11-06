@@ -69,3 +69,78 @@ track_map:
   width: 269
   height: 183
 
+
+
+# GO
+
+# ROI coordinates for 1280x720 video
+# # Horizontal throttle/brake bars in bottom-right corner
+
+# # Throttle - horizontal bar (green/yellow/orange when TC active)
+# throttle:
+#   x: 1180 # 1170 for me, 1180 for GO
+#   y: 599 # 670
+#   width: 87
+#   height: 10
+
+# # Brake - horizontal bar below throttle (red/yellow/orange when ABS active)
+# # Height reduced to 11 to avoid capturing Force Feedback indicator below
+# brake:
+#   x: 1180 # 1170 for me, 1180 for GO
+#   y: 609
+#   width: 87
+#   height: 10
+
+# # Steering - white dot on horizontal scale above throttle bar
+# # Extended to frame edge to capture rightmost tick marks (x=1110 to x=1280)
+# steering:
+#   x: 1150
+#   y: 591
+#   width: 116
+#   height: 9
+
+# # Lap number - red flag with white number in top-left corner
+# lap_number:
+#   x: 237
+#   y: 71
+#   width: 47
+#   height: 37
+
+# lap_number_training:
+#   x: 181
+#   y: 71
+#   width: 47
+#   height: 37
+
+# # Last lap time - "LAST" lap time shown after completing a lap
+# # This is the actual completed lap time, captured at the start of the next lap
+# last_lap_time:
+#   x: 119
+#   y: 87
+#   width: 87
+#   height: 20
+
+# # Speed - current speed in km/h displayed in bottom-right corner
+# # Located above throttle bar, inside the rev meter arc
+# speed:
+#   x: 1189
+#   y: 557
+#   width: 39
+#   height: 25
+
+# # Gear - current gear (1-6) displayed in bottom-right corner
+# # Located in the center of the rev meter arc
+# gear:
+#   x: 1137
+#   y: 531
+#   width: 40
+#   height: 61
+
+# # Track map - circular minimap in top-left corner
+# # Shows white racing line with red dot indicating current position
+# track_map:
+#   x: 3
+#   y: 215
+#   width: 269
+#   height: 183
+
