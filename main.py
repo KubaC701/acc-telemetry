@@ -6,6 +6,10 @@ Extracts throttle, brake, and steering telemetry from ACC gameplay videos.
 import yaml
 import time
 import cv2
+import glob
+import os
+import sys
+import webbrowser
 from pathlib import Path
 from src.video_processor import VideoProcessor
 from src.telemetry_extractor import TelemetryExtractor
@@ -71,33 +75,109 @@ def load_config(config_path: str = 'config/roi_config.yaml'):
         return yaml.safe_load(f)
 
 
+def select_video_file():
+    """Interactively select a video file from the videos/ directory."""
+    video_dir = "videos"
+    if not os.path.exists(video_dir):
+        print(f"❌ Error: Directory '{video_dir}' not found.")
+        return None
+
+    mp4_files = glob.glob(os.path.join(video_dir, "*.mp4"))
+    
+    if not mp4_files:
+        print(f"❌ Error: No .mp4 files found in '{video_dir}/'.")
+        return None
+    
+    print(f"\n🎥 Found video files in '{video_dir}/':")
+    for i, file_path in enumerate(mp4_files, 1):
+        filename = os.path.basename(file_path)
+        print(f"{i}. {filename}")
+    
+    while True:
+        try:
+            selection = input(f"\nSelect video (1-{len(mp4_files)}): ")
+            idx = int(selection) - 1
+            if 0 <= idx < len(mp4_files):
+                return mp4_files[idx]
+            else:
+                print("❌ Invalid selection. Please try again.")
+        except ValueError:
+            print("❌ Invalid input. Please enter a number.")
+
+
+def select_profile(full_config):
+    """Interactively select an ROI profile from the configuration."""
+    if not full_config:
+        print("❌ Error: Configuration is empty.")
+        return None
+        
+    # Assume top-level keys are profiles
+    profiles = list(full_config.keys())
+    
+    if not profiles:
+        print("❌ Error: No profiles found in configuration.")
+        return None
+        
+    # If there's only one profile (or it's the old format without profiles), 
+    # we might need to handle that. But assuming new structure:
+    
+    # Check if this looks like the old flat structure (has 'throttle' at top level)
+    if 'throttle' in profiles:
+        print("⚠️  Warning: Detected old configuration format (flat structure). Using it directly.")
+        return full_config
+
+    print("\n📋 Available Configurations:")
+    for i, profile in enumerate(profiles, 1):
+        print(f"{i}. {profile}")
+        
+    while True:
+        try:
+            selection = input(f"\nSelect config (1-{len(profiles)}): ")
+            idx = int(selection) - 1
+            if 0 <= idx < len(profiles):
+                selected_profile = profiles[idx]
+                return full_config[selected_profile]
+            else:
+                print("❌ Invalid selection. Please try again.")
+        except ValueError:
+            print("❌ Invalid input. Please enter a number.")
+
+
 def main():
     """Main processing pipeline."""
-    
-    # Track total execution time
-    total_start_time = time.time()
-    
-    # Configuration
-    VIDEO_PATH = './panorama-training-2025-10-26.mp4'  # Full race video for testing
-    CONFIG_PATH = 'config/roi_config.yaml'
     
     print("=" * 60)
     print("ACC Telemetry Extractor")
     print("=" * 60)
     
-    # Check if video exists
-    if not Path(VIDEO_PATH).exists():
-        print(f"\n❌ Error: Video file not found at '{VIDEO_PATH}'")
-        print("\nPlease place your ACC gameplay video in the project root directory")
-        print("and name it 'input_video.mp4' (or update VIDEO_PATH in main.py)")
+    CONFIG_PATH = 'config/roi_config.yaml'
+    
+    # 1. Load configuration
+    print(f"\n📋 Loading ROI configuration from '{CONFIG_PATH}'...")
+    if not Path(CONFIG_PATH).exists():
+        print(f"❌ Error: Config file not found at '{CONFIG_PATH}'")
         return
     
-    # Load configuration
-    print(f"\n📋 Loading ROI configuration from '{CONFIG_PATH}'...")
-    roi_config = load_config(CONFIG_PATH)
+    full_roi_config = load_config(CONFIG_PATH)
+    
+    # 2. Select video
+    VIDEO_PATH = select_video_file()
+    if not VIDEO_PATH:
+        return
+
+    # 3. Select profile
+    roi_config = select_profile(full_roi_config)
+    if not roi_config:
+        return
+        
+    # Track total execution time
+    total_start_time = time.time()
     
     # Initialize components
-    print(f"🎥 Opening video: {VIDEO_PATH}")
+    print(f"\n🎥 Opening video: {VIDEO_PATH}")
+    # We might want to print which profile is used if we had the name here, 
+    # but select_profile returns the dict.
+    
     processor = VideoProcessor(VIDEO_PATH, roi_config)
     extractor = TelemetryExtractor()
     
@@ -338,6 +418,14 @@ def main():
     graph_time = time.time() - graph_start
     print(f"   ✅ Interactive graph saved: {graph_path} (took {graph_time:.2f}s)")
     print(f"      💡 Open this HTML file in your browser for interactive zoom/pan/hover!")
+
+        # Open immediately in browser
+    try:
+        abs_path = Path(graph_path).resolve()
+        print(f"      🚀 Opening in default browser...")
+        webbrowser.open(f'file://{abs_path}')
+    except Exception as e:
+        print(f"      ⚠️  Could not open browser automatically: {e}")
     
     print(f"\n   Output Generation Summary:")
     print(f"      DataFrame creation: {df_time*1000:.1f}ms")
@@ -381,4 +469,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

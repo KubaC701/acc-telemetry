@@ -1,146 +1,138 @@
-# ROI coordinates for 1280x720 video
-# Horizontal throttle/brake bars in bottom-right corner
+# ROI configurations for different video sources
 
-# Throttle - horizontal bar (green/yellow/orange when TC active)
-throttle:
-  x: 1170
-  y: 670
-  width: 103
-  height: 14
+twitch_720p:
+  # ROI coordinates for 1280x720 video
+  # Horizontal throttle/brake bars in bottom-right corner
+  
+  # Throttle - horizontal bar (green/yellow/orange when TC active)
+  throttle:
+    x: 1172
+    y: 670
+    width: 102
+    height: 14
+  
+  # Brake - horizontal bar below throttle (red/yellow/orange when ABS active)
+  # Height reduced to 11 to avoid capturing Force Feedback indicator below
+  brake:
+    x: 1172
+    y: 683
+    width: 102
+    height: 12
+  
+  # Steering - white dot on horizontal scale above throttle bar
+  # Extended to frame edge to capture rightmost tick marks (x=1110 to x=1280)
+  steering:
+    x: 1135
+    y: 662
+    width: 134
+    height: 9
+  
+  # Lap number - red flag with white number in top-left corner
+  lap_number:
+    x: 237
+    y: 71
+    width: 47
+    height: 37
+  
+  lap_number_training:
+    x: 181
+    y: 71
+    width: 47
+    height: 37
+  
+  # Last lap time - "LAST" lap time shown after completing a lap
+  # This is the actual completed lap time, captured at the start of the next lap
+  last_lap_time:
+    x: 119
+    y: 87
+    width: 87
+    height: 20
+  
+  # Speed - current speed in km/h displayed in bottom-right corner
+  # Located above throttle bar, inside the rev meter arc
+  speed:
+    x: 1177
+    y: 621
+    width: 54
+    height: 32
+  
+  # Gear - current gear (1-6) displayed in bottom-right corner
+  # Located in the center of the rev meter arc
+  gear:
+    x: 1124
+    y: 591
+    width: 47
+    height: 72
+  
+  # Track map - circular minimap in top-left corner
+  # Shows white racing line with red dot indicating current position
+  track_map:
+    x: 3
+    y: 215
+    width: 269
+    height: 183
 
-# Brake - horizontal bar below throttle (red/yellow/orange when ABS active)
-# Height reduced to 11 to avoid capturing Force Feedback indicator below
-brake:
-  x: 1170
-  y: 687
-  width: 103
-  height: 11
-
-# Steering - white dot on horizontal scale above throttle bar
-# Extended to frame edge to capture rightmost tick marks (x=1110 to x=1280)
-steering:
-  x: 1135
-  y: 662
-  width: 134
-  height: 9
-
-# Lap number - red flag with white number in top-left corner
-lap_number:
-  x: 237
-  y: 71
-  width: 47
-  height: 37
-
-lap_number_training:
-  x: 181
-  y: 71
-  width: 47
-  height: 37
-
-# Last lap time - "LAST" lap time shown after completing a lap
-# This is the actual completed lap time, captured at the start of the next lap
-last_lap_time:
-  x: 119
-  y: 87
-  width: 87
-  height: 20
-
-# Speed - current speed in km/h displayed in bottom-right corner
-# Located above throttle bar, inside the rev meter arc
-speed:
-  x: 1177
-  y: 621
-  width: 54
-  height: 32
-
-# Gear - current gear (1-6) displayed in bottom-right corner
-# Located in the center of the rev meter arc
-gear:
-  x: 1124
-  y: 591
-  width: 47
-  height: 72
-
-# Track map - circular minimap in top-left corner
-# Shows white racing line with red dot indicating current position
-track_map:
-  x: 3
-  y: 215
-  width: 269
-  height: 183
-
-
-
-# GO
-
-# ROI coordinates for 1280x720 video
-# # Horizontal throttle/brake bars in bottom-right corner
-
-# # Throttle - horizontal bar (green/yellow/orange when TC active)
-# throttle:
-#   x: 1180 # 1170 for me, 1180 for GO
-#   y: 599 # 670
-#   width: 87
-#   height: 10
-
-# # Brake - horizontal bar below throttle (red/yellow/orange when ABS active)
-# # Height reduced to 11 to avoid capturing Force Feedback indicator below
-# brake:
-#   x: 1180 # 1170 for me, 1180 for GO
-#   y: 609
-#   width: 87
-#   height: 10
-
-# # Steering - white dot on horizontal scale above throttle bar
-# # Extended to frame edge to capture rightmost tick marks (x=1110 to x=1280)
-# steering:
-#   x: 1150
-#   y: 591
-#   width: 116
-#   height: 9
-
-# # Lap number - red flag with white number in top-left corner
-# lap_number:
-#   x: 237
-#   y: 71
-#   width: 47
-#   height: 37
-
-# lap_number_training:
-#   x: 181
-#   y: 71
-#   width: 47
-#   height: 37
-
-# # Last lap time - "LAST" lap time shown after completing a lap
-# # This is the actual completed lap time, captured at the start of the next lap
-# last_lap_time:
-#   x: 119
-#   y: 87
-#   width: 87
-#   height: 20
-
-# # Speed - current speed in km/h displayed in bottom-right corner
-# # Located above throttle bar, inside the rev meter arc
-# speed:
-#   x: 1189
-#   y: 557
-#   width: 39
-#   height: 25
-
-# # Gear - current gear (1-6) displayed in bottom-right corner
-# # Located in the center of the rev meter arc
-# gear:
-#   x: 1137
-#   y: 531
-#   width: 40
-#   height: 61
-
-# # Track map - circular minimap in top-left corner
-# # Shows white racing line with red dot indicating current position
-# track_map:
-#   x: 3
-#   y: 215
-#   width: 269
-#   height: 183
-
+go_setups_720p:
+  # ROI coordinates for 1280x720 video from Go Setups
+  
+  # Throttle - horizontal bar (green/yellow/orange when TC active)
+  throttle:
+    x: 1180
+    y: 599
+    width: 87
+    height: 10
+  
+  # Brake - horizontal bar below throttle (red/yellow/orange when ABS active)
+  brake:
+    x: 1180
+    y: 609
+    width: 87
+    height: 10
+  
+  # Steering - white dot on horizontal scale above throttle bar
+  steering:
+    x: 1150
+    y: 591
+    width: 116
+    height: 9
+  
+  # Lap number - red flag with white number in top-left corner
+  lap_number:
+    x: 237
+    y: 71
+    width: 47
+    height: 37
+  
+  lap_number_training:
+    x: 181
+    y: 71
+    width: 47
+    height: 37
+  
+  # Last lap time - "LAST" lap time shown after completing a lap
+  last_lap_time:
+    x: 119
+    y: 87
+    width: 87
+    height: 20
+  
+  # Speed - current speed in km/h displayed in bottom-right corner
+  speed:
+    x: 1189
+    y: 557
+    width: 39
+    height: 25
+  
+  # Gear - current gear (1-6) displayed in bottom-right corner
+  gear:
+    x: 1137
+    y: 531
+    width: 40
+    height: 61
+  
+  # Track map - circular minimap in top-left corner
+  track_map:
+    x: 3
+    y: 215
+    width: 269
+    height: 183
