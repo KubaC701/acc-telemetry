@@ -222,32 +222,32 @@ class InteractiveTelemetryVisualizer:
         # ===== UPDATE AXES =====
         # Throttle Y-axis
         fig.update_yaxes(
-            title_text="Throttle (%)", 
-            range=[-5, 105],
+            title_text="Throttle (%)",
+            autorange=True,
             gridcolor='rgba(128, 128, 128, 0.2)',
             row=1, col=1
         )
-        
+
         # Brake Y-axis
         fig.update_yaxes(
-            title_text="Brake (%)", 
-            range=[-5, 105],
+            title_text="Brake (%)",
+            autorange=True,
             gridcolor='rgba(128, 128, 128, 0.2)',
             row=2, col=1
         )
-        
+
         # Steering Y-axis
         fig.update_yaxes(
-            title_text="Steering", 
-            range=[-1.1, 1.1],
+            title_text="Steering",
+            autorange=True,
             gridcolor='rgba(128, 128, 128, 0.2)',
             row=3, col=1
         )
-        
+
         # Speed Y-axis
         fig.update_yaxes(
-            title_text="Speed (km/h)", 
-            range=[0, 350],
+            title_text="Speed (km/h)",
+            autorange=True,
             gridcolor='rgba(128, 128, 128, 0.2)',
             row=4, col=1
         )
@@ -545,34 +545,34 @@ class InteractiveTelemetryVisualizer:
             # Y1 - Throttle (top 13% of plot)
             yaxis1=dict(
                 title='Throttle (%)',
-                range=[-5, 105],
+                autorange=True,
                 domain=[0.87, 1.0],
                 gridcolor='rgba(128, 128, 128, 0.2)',
                 anchor='x'
             ),
-            
+
             # Y2 - Brake (73-86% of plot)
             yaxis2=dict(
                 title='Brake (%)',
-                range=[-5, 105],
+                autorange=True,
                 domain=[0.73, 0.86],
                 gridcolor='rgba(128, 128, 128, 0.2)',
                 anchor='x'
             ),
-            
+
             # Y3 - Steering (59-72% of plot)
             yaxis3=dict(
                 title='Steering',
-                range=[-1.1, 1.1],
+                autorange=True,
                 domain=[0.59, 0.72],
                 gridcolor='rgba(128, 128, 128, 0.2)',
                 anchor='x'
             ),
-            
+
             # Y4 - Speed (45-58% of plot)
             yaxis4=dict(
                 title='Speed (km/h)',
-                range=[0, 350],
+                autorange=True,
                 domain=[0.45, 0.58],
                 gridcolor='rgba(128, 128, 128, 0.2)',
                 anchor='x'
@@ -708,11 +708,11 @@ class InteractiveTelemetryVisualizer:
         
         # Add center line for steering
         fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5, row=3, col=1)
-        
+
         # Update axes
-        fig.update_yaxes(title_text="Throttle (%)", range=[-5, 105], row=1, col=1)
-        fig.update_yaxes(title_text="Brake (%)", range=[-5, 105], row=2, col=1)
-        fig.update_yaxes(title_text="Steering", range=[-1.1, 1.1], row=3, col=1)
+        fig.update_yaxes(title_text="Throttle (%)", autorange=True, row=1, col=1)
+        fig.update_yaxes(title_text="Brake (%)", autorange=True, row=2, col=1)
+        fig.update_yaxes(title_text="Steering", autorange=True, row=3, col=1)
         fig.update_xaxes(title_text="Time (seconds)", row=3, col=1)
         
         # Layout
@@ -956,9 +956,9 @@ class InteractiveTelemetryVisualizer:
         fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5, row=3, col=1)
         
         # Update axes
-        fig.update_yaxes(title_text="Throttle (%)", range=[-5, 105], row=1, col=1)
-        fig.update_yaxes(title_text="Brake (%)", range=[-5, 105], row=2, col=1)
-        fig.update_yaxes(title_text="Steering", range=[-1.1, 1.1], row=3, col=1)
+        fig.update_yaxes(title_text="Throttle (%)", autorange=True, row=1, col=1)
+        fig.update_yaxes(title_text="Brake (%)", autorange=True, row=2, col=1)
+        fig.update_yaxes(title_text="Steering", autorange=True, row=3, col=1)
         fig.update_xaxes(title_text="Lap Time (seconds)", row=3, col=1)
         
         # Layout
@@ -1324,11 +1324,11 @@ class InteractiveTelemetryVisualizer:
         fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5, row=5, col=1)
         
         # Update axes labels
-        fig.update_yaxes(title_text="Throttle (%)", range=[-5, 105], row=1, col=1)
-        fig.update_yaxes(title_text="Brake (%)", range=[-5, 105], row=2, col=1)
-        fig.update_yaxes(title_text="Steering", range=[-1.1, 1.1], row=3, col=1)
-        fig.update_yaxes(title_text="Speed (km/h)", range=[0, 350], row=4, col=1)
-        fig.update_yaxes(title_text="Time Delta (s)", row=5, col=1)
+        fig.update_yaxes(title_text="Throttle (%)", autorange=True, row=1, col=1)
+        fig.update_yaxes(title_text="Brake (%)", autorange=True, row=2, col=1)
+        fig.update_yaxes(title_text="Steering", autorange=True, row=3, col=1)
+        fig.update_yaxes(title_text="Speed (km/h)", autorange=True, row=4, col=1)
+        fig.update_yaxes(title_text="Time Delta (s)", autorange=True, row=5, col=1)
         fig.update_xaxes(title_text="Track Position (%)", row=5, col=1)
         
         # Create dropdown menu buttons
