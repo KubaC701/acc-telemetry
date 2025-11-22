@@ -97,8 +97,15 @@ class TelemetryExtractor:
             percentage = (filled_height / height) * 100.0
             
         else:  # horizontal
-            # Sample middle rows to avoid edge artifacts
-            middle_rows = mask[height//3:2*height//3, :]
+            # Sample middle 80% of rows (10% to 90%) to avoid edge artifacts while capturing
+            # enough valid rows to bypass text overlays (which create holes in the middle)
+            start_row = int(height * 0.1)
+            end_row = int(height * 0.9)
+            # Ensure at least one row is selected
+            if start_row == end_row:
+                end_row += 1
+                
+            middle_rows = mask[start_row:end_row, :]
 
             # Find the continuous filled region from the left edge
             # This handles text overlays and gaps by detecting the main bar fill
@@ -140,8 +147,12 @@ class TelemetryExtractor:
             if not filled_widths:
                 return 0.0
 
-            # Use median to avoid outliers
-            filled_width = np.median(filled_widths)
+            # Use 80th percentile instead of median
+            # Why: Text overlays (e.g. "ABS") create holes in the bar, causing many rows to have 
+            # artificially low widths. The "true" bar width is represented by the solid rows 
+            # above/below the text. Since "bad" rows might outnumber "good" rows (e.g. 6 vs 3),
+            # median fails. 80th percentile robustly picks the full width while rejecting single-row noise.
+            filled_width = np.percentile(filled_widths, 80)
             percentage = (filled_width / width) * 100.0
         
         return min(100.0, max(0.0, percentage))
