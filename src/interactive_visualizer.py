@@ -345,7 +345,7 @@ class InteractiveTelemetryVisualizer:
             template='plotly_white',
             # Add range slider on bottom plot for easy navigation
             xaxis7=dict(
-                rangeslider=dict(visible=True, thickness=0.05),
+                rangeslider=dict(visible=False),
                 type='linear'
             )
         )
@@ -534,7 +534,7 @@ class InteractiveTelemetryVisualizer:
             xaxis=dict(
                 title='Time (seconds)',
                 domain=[0, 1],
-                rangeslider=dict(visible=True, thickness=0.05),
+                rangeslider=dict(visible=False),
                 gridcolor='rgba(128, 128, 128, 0.2)'
             ),
             
@@ -727,7 +727,7 @@ class InteractiveTelemetryVisualizer:
             showlegend=True,
             hovermode='x unified',
             template='plotly_white',
-            xaxis3=dict(rangeslider=dict(visible=True, thickness=0.05))
+            xaxis3=dict(rangeslider=dict(visible=False))
         )
         
         fig.write_html(filepath)
@@ -980,7 +980,7 @@ class InteractiveTelemetryVisualizer:
             ),
             hovermode='x unified',
             template='plotly_white',
-            xaxis3=dict(rangeslider=dict(visible=True, thickness=0.05))
+            xaxis3=dict(rangeslider=dict(visible=False))
         )
         
         fig.write_html(filepath)
@@ -1382,7 +1382,7 @@ class InteractiveTelemetryVisualizer:
             ),
             hovermode='x unified',
             template='plotly_white',
-            xaxis5=dict(rangeslider=dict(visible=True, thickness=0.05))
+            xaxis5=dict(rangeslider=dict(visible=False))
         )
         
         # Generate filename
