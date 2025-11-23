@@ -1,8 +1,9 @@
 """API endpoints for video management."""
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, UploadFile, File
 from typing import List
 from pathlib import Path
+import shutil
 
 from ..models import VideoProcessRequest, VideoMetadata, VideoListItem
 from ..services.storage import StorageService
@@ -12,6 +13,86 @@ from ..services.jobs import job_manager
 router = APIRouter()
 storage = StorageService()
 processing = VideoProcessingService()
+
+
+@router.post("/upload", response_model=VideoMetadata)
+async def upload_video(
+    file: UploadFile = File(...),
+    background_tasks: BackgroundTasks = BackgroundTasks()
+):
+    """
+    Upload a video file and start processing it.
+
+    Args:
+        file: The video file to upload
+        background_tasks: FastAPI background tasks
+
+    Returns:
+        VideoMetadata object (initially with processing status)
+    """
+    # Validate file type
+    if not file.content_type.startswith('video/'):
+        raise HTTPException(status_code=400, detail="File must be a video")
+    
+    # Save file to input directory
+    video_name = storage.sanitize_filename(file.filename)
+    file_path = storage.get_video_path(video_name)
+    
+    # Ensure input directory exists
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        with file_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    finally:
+        file.file.close()
+            
+    # Check if already processed (if re-uploading)
+    if storage.video_exists(video_name):
+        # If it exists, we might want to re-process or just return existing
+        # For now, let's assume re-upload means re-process, so we delete old data
+        storage.delete_video(video_name)
+
+    # Create job
+    job_id = job_manager.create_job(video_name)
+
+    # Define progress callback
+    def progress_callback(progress: int, message: str):
+        job_manager.update_job(
+            job_id=job_id,
+            status="processing",
+            progress=progress,
+            message=message
+        )
+
+    # Define background task
+    async def process_task():
+        try:
+            job_manager.update_job(job_id, status="processing", progress=0, message="Starting processing...")
+
+            await processing.process_video(
+                video_path=str(file_path),
+                video_name=video_name,
+                progress_callback=progress_callback
+            )
+
+            job_manager.complete_job(job_id, message=f"Video '{video_name}' processed successfully")
+
+        except Exception as e:
+            job_manager.fail_job(job_id, error=str(e))
+
+    # Add to background tasks
+    background_tasks.add_task(process_task)
+
+    # Return initial metadata (simulated since processing just started)
+    return VideoMetadata(
+        name=video_name,
+        duration=0,
+        fps=0,
+        frame_count=0,
+        resolution=(0, 0),
+        laps=[]
+    )
 
 
 @router.get("", response_model=List[VideoListItem])

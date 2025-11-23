@@ -13,7 +13,7 @@ class Settings(BaseModel):
     api_description: str = "API for processing ACC gameplay videos and extracting telemetry data"
 
     # CORS Settings
-    cors_origins: list = ["http://localhost:3000", "http://localhost:5173"]
+    cors_origins: list = ["http://localhost:3000", "http://localhost:5173", "http://localhost:5174"]
 
     # Paths
     base_dir: Path = Path(__file__).parent.parent.parent
