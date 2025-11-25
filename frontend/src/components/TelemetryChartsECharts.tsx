@@ -31,17 +31,19 @@ interface ChartConfig {
     min?: number;
     max?: number;
     type?: 'value' | 'category';
+    splitNumber?: number;
+    interval?: number;
   };
 }
 
 const CHART_CONFIGS: ChartConfig[] = [
-  { key: 'throttle', title: 'Throttle', color: '#22c55e', comparisonColor: '#86efac', yAxis: { min: 0, max: 100 } },
-  { key: 'brake', title: 'Brake', color: '#ef4444', comparisonColor: '#fca5a5', yAxis: { min: 0, max: 100 } },
-  { key: 'steering', title: 'Steering', color: '#3b82f6', comparisonColor: '#93c5fd' },
-  { key: 'speed', title: 'Speed', color: '#f97316', comparisonColor: '#fdba74' },
-  { key: 'gear', title: 'Gear', color: '#a855f7', comparisonColor: '#d8b4fe', yAxis: { min: 0, max: 6 } }, // Assuming max gear 8
-  { key: 'tc_active', title: 'TC Active', color: '#eab308', comparisonColor: '#fde047', yAxis: { min: 0, max: 1 } },
-  { key: 'abs_active', title: 'ABS Active', color: '#f59e0b', comparisonColor: '#fcd34d', yAxis: { min: 0, max: 1 } },
+  { key: 'throttle', title: 'Throttle', color: '#22c55e', comparisonColor: '#86efac', yAxis: { min: 0, max: 100, splitNumber: 2 } },
+  { key: 'brake', title: 'Brake', color: '#ef4444', comparisonColor: '#fca5a5', yAxis: { min: 0, max: 100, splitNumber: 2 } },
+  { key: 'steering', title: 'Steering', color: '#3b82f6', comparisonColor: '#93c5fd', yAxis: { splitNumber: 2 } },
+  { key: 'speed', title: 'Speed', color: '#f97316', comparisonColor: '#fdba74', yAxis: { splitNumber: 4 } },
+  { key: 'gear', title: 'Gear', color: '#a855f7', comparisonColor: '#d8b4fe', yAxis: { min: 0, max: 6, splitNumber: 2 } }, // Assuming max gear 8
+  { key: 'tc_active', title: 'TC Active', color: '#eab308', comparisonColor: '#fde047', yAxis: { min: 0, max: 1, interval: 1 } },
+  { key: 'abs_active', title: 'ABS Active', color: '#f59e0b', comparisonColor: '#fcd34d', yAxis: { min: 0, max: 1, interval: 1 } },
 ];
 
 const ChartRow: React.FC<{
@@ -112,6 +114,22 @@ const ChartRow: React.FC<{
           return result;
         }
       },
+      toolbox: {
+        feature: {
+          dataZoom: {
+            yAxisIndex: 'none',
+            title: {
+              zoom: 'Zoom',
+              back: 'Reset Zoom'
+            }
+          }
+        },
+        iconStyle: {
+          borderColor: '#94a3b8'
+        },
+        right: 20,
+        top: 0
+      },
       grid: {
         left: 50,
         right: 20,
@@ -142,6 +160,8 @@ const ChartRow: React.FC<{
         type: 'value',
         min: config.yAxis?.min,
         max: config.yAxis?.max,
+        splitNumber: config.yAxis?.splitNumber,
+        interval: config.yAxis?.interval,
         splitLine: {
           lineStyle: { color: '#334155' }
         },

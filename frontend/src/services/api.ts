@@ -40,9 +40,10 @@ export const fetchVideoMetadata = async (videoName: string): Promise<VideoMetada
   return response.data;
 };
 
-export const uploadVideo = async (file: File): Promise<VideoMetadata> => {
+export const uploadVideo = async (file: File, hasOverlay: boolean = false): Promise<VideoMetadata> => {
   const formData = new FormData();
   formData.append('file', file);
+  formData.append('has_overlay', String(hasOverlay));
   const response = await api.post('/videos/upload', formData, {
     headers: {
       'Content-Type': 'multipart/form-data',

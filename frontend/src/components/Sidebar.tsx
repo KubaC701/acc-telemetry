@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Upload, FileVideo, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react';
+import { Upload, FileVideo, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Loader2, AlertCircle } from 'lucide-react';
 import type { VideoListItem, VideoMetadata } from '../services/api';
 import clsx from 'clsx';
 
@@ -12,6 +12,10 @@ interface SidebarProps {
   onSelectComparison: (video: string, lap: number) => void;
   onExpandVideo: (videoName: string) => void;
   onUpload: (file: File) => void;
+  isUploading: boolean;
+  uploadError: string | null;
+  hasOverlay: boolean;
+  onToggleOverlay: () => void;
   isOpen: boolean;
   onToggle: () => void;
 }
@@ -25,6 +29,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectComparison,
   onExpandVideo,
   onUpload,
+  isUploading,
+  uploadError,
+  hasOverlay,
+  onToggleOverlay,
   isOpen,
   onToggle,
 }) => {
@@ -167,7 +175,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
         })}
       </div>
 
-      <div className="p-4 border-t border-slate-800/50 bg-slate-900/50 backdrop-blur-sm">
+      <div className="p-4 border-t border-slate-800/50 bg-slate-900/50 backdrop-blur-sm space-y-2">
+        {uploadError && isOpen && (
+          <div className="text-xs text-red-400 flex items-start gap-1.5 p-2 bg-red-900/20 border border-red-900/50 rounded">
+            <AlertCircle size={14} className="shrink-0 mt-0.5" />
+            <span>{uploadError}</span>
+          </div>
+        )}
+        
+        {isOpen && (
+          <div className="flex items-center gap-2 px-1 py-1">
+            <input
+              type="checkbox"
+              id="hasOverlay"
+              checked={hasOverlay}
+              onChange={onToggleOverlay}
+              className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-blue-600 focus:ring-blue-500 focus:ring-offset-slate-900"
+            />
+            <label 
+              htmlFor="hasOverlay" 
+              className="text-sm text-slate-400 cursor-pointer select-none flex items-center gap-1.5"
+              title="Go Setups youtube video"
+            >
+              Has Overlay
+              <span className="text-xs text-slate-600">(Go Setups)</span>
+            </label>
+          </div>
+        )}
+
         <input
           type="file"
           ref={fileInputRef}
@@ -177,14 +212,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
         />
         <button
           onClick={() => fileInputRef.current?.click()}
+          disabled={isUploading}
           className={clsx(
-            "w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white py-2.5 px-4 rounded-lg transition-all duration-200 shadow-lg shadow-blue-900/20 hover:shadow-blue-900/40 active:scale-[0.98]",
+            "w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg transition-all duration-200 shadow-lg active:scale-[0.98]",
+            isUploading 
+              ? "bg-slate-800 text-slate-400 cursor-not-allowed shadow-none" 
+              : "bg-blue-600 hover:bg-blue-500 text-white shadow-blue-900/20 hover:shadow-blue-900/40",
             !isOpen && "px-0"
           )}
           title="Upload Video"
         >
-          <Upload size={20} />
-          {isOpen && <span className="font-medium">Upload Video</span>}
+          {isUploading ? (
+            <Loader2 size={20} className="animate-spin" />
+          ) : (
+            <Upload size={20} />
+          )}
+          {isOpen && <span className="font-medium">{isUploading ? 'Uploading...' : 'Upload Video'}</span>}
         </button>
       </div>
     </div>

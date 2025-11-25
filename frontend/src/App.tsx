@@ -21,7 +21,10 @@ function App() {
   const [comparisonData, setComparisonData] = useState<any[]>([]);
   
   const [isLoading, setIsLoading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [hasOverlay, setHasOverlay] = useState(false);
 
   useEffect(() => {
     loadVideos();
@@ -90,11 +93,17 @@ function App() {
   };
 
   const handleUpload = async (file: File) => {
+    console.log('Uploading video:', file);
+    setIsUploading(true);
+    setUploadError(null);
     try {
-      await uploadVideo(file);
+      await uploadVideo(file, hasOverlay);
       await loadVideos(); // Refresh list
     } catch (error) {
       console.error('Failed to upload video:', error);
+      setUploadError('Failed to upload video. Please try again.');
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -121,6 +130,10 @@ function App() {
         }}
         onExpandVideo={handleExpandVideo}
         onUpload={handleUpload}
+        isUploading={isUploading}
+        uploadError={uploadError}
+        hasOverlay={hasOverlay}
+        onToggleOverlay={() => setHasOverlay(!hasOverlay)}
         isOpen={isSidebarOpen}
         onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
       />

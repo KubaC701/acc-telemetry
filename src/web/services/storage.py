@@ -16,6 +16,7 @@ class StorageService:
 
     def __init__(self):
         self.output_dir = settings.data_output_dir
+        self.videos_dir = settings.videos_dir
 
     @staticmethod
     def sanitize_filename(filename: str) -> str:
@@ -53,6 +54,18 @@ class StorageService:
             Path to the video directory
         """
         return self.output_dir / video_name
+
+    def get_video_path(self, video_name: str) -> Path:
+        """
+        Get the path for the raw video file.
+
+        Args:
+            video_name: Name of the video (sanitized)
+
+        Returns:
+            Path to the video file
+        """
+        return self.videos_dir / f"{video_name}.mp4"
 
     def video_exists(self, video_name: str) -> bool:
         """

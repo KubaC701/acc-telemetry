@@ -35,6 +35,7 @@ class VideoProcessingService:
         self,
         video_path: str,
         video_name: str,
+        has_overlay: bool = False,
         progress_callback: Optional[Callable[[int, str], None]] = None
     ) -> VideoMetadata:
         """
@@ -58,7 +59,15 @@ class VideoProcessingService:
             raise FileNotFoundError(f"Video file not found: {video_path}")
 
         # Load configuration
-        roi_config = self.load_roi_config()
+        full_config = self.load_roi_config()
+        
+        # Select profile based on overlay flag
+        profile_name = 'go_setups_720p' if has_overlay else 'twitch_720p'
+        roi_config = full_config.get(profile_name)
+        
+        if not roi_config:
+            # Fallback to first available if specific one not found
+            roi_config = list(full_config.values())[0]
 
         # Initialize components
         processor = VideoProcessor(video_path, roi_config)

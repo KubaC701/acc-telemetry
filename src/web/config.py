@@ -13,11 +13,12 @@ class Settings(BaseModel):
     api_description: str = "API for processing ACC gameplay videos and extracting telemetry data"
 
     # CORS Settings
-    cors_origins: list = ["http://localhost:3000", "http://localhost:5173", "http://localhost:5174"]
+    cors_origins: list = ["http://localhost:3000", "http://localhost:5173", "http://localhost:5174", "http://127.0.0.1:5173"]
 
     # Paths
     base_dir: Path = Path(__file__).parent.parent.parent
     data_output_dir: Path = base_dir / "data" / "output"
+    videos_dir: Path = base_dir / "data" / "videos"
     config_dir: Path = base_dir / "config"
     roi_config_path: Path = config_dir / "roi_config.yaml"
 
@@ -35,3 +36,4 @@ settings = Settings()
 
 # Ensure output directory exists
 settings.data_output_dir.mkdir(parents=True, exist_ok=True)
+settings.videos_dir.mkdir(parents=True, exist_ok=True)

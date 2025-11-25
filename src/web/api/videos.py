@@ -1,9 +1,11 @@
 """API endpoints for video management."""
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks, UploadFile, File
+from fastapi import APIRouter, HTTPException, BackgroundTasks, UploadFile, File, Form
 from typing import List
 from pathlib import Path
 import shutil
+import cv2
+from datetime import datetime
 
 from ..models import VideoProcessRequest, VideoMetadata, VideoListItem
 from ..services.storage import StorageService
@@ -18,6 +20,7 @@ processing = VideoProcessingService()
 @router.post("/upload", response_model=VideoMetadata)
 async def upload_video(
     file: UploadFile = File(...),
+    has_overlay: bool = Form(False),
     background_tasks: BackgroundTasks = BackgroundTasks()
 ):
     """
@@ -47,6 +50,20 @@ async def upload_video(
     finally:
         file.file.close()
             
+    # Check resolution
+    cap = cv2.VideoCapture(str(file_path))
+    if cap.isOpened():
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        cap.release()
+        
+        if height > 720:
+            # Delete file if invalid
+            file_path.unlink()
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Video resolution too high ({height}p). Only 720p or lower is currently supported."
+            )
+    
     # Check if already processed (if re-uploading)
     if storage.video_exists(video_name):
         # If it exists, we might want to re-process or just return existing
@@ -73,6 +90,7 @@ async def upload_video(
             await processing.process_video(
                 video_path=str(file_path),
                 video_name=video_name,
+                has_overlay=has_overlay,
                 progress_callback=progress_callback
             )
 
@@ -86,12 +104,16 @@ async def upload_video(
 
     # Return initial metadata (simulated since processing just started)
     return VideoMetadata(
-        name=video_name,
+        video_name=video_name,
+        video_path=str(file_path),
         duration=0,
         fps=0,
         frame_count=0,
-        resolution=(0, 0),
-        laps=[]
+        total_laps=0,
+        laps=[],
+        processed_at=datetime.now().isoformat(),
+        csv_path="",
+        track_position_available=False
     )
 
 

@@ -110,6 +110,8 @@ class VideoProcessor:
         return {
             'fps': self.fps,
             'frame_count': self.frame_count,
-            'duration': self.frame_count / self.fps if self.fps else 0
+            'duration': self.frame_count / self.fps if self.fps else 0,
+            'width': int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)) if self.cap else 0,
+            'height': int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) if self.cap else 0
         }
 
