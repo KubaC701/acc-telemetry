@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
-import { TelemetryCharts } from './components/TelemetryCharts';
+import { TelemetryChartsECharts } from './components/TelemetryChartsECharts';
 import { fetchVideos, uploadVideo, fetchTelemetryData, fetchVideoMetadata } from './services/api';
 import type { VideoListItem, VideoMetadata } from './services/api';
 import clsx from 'clsx';
@@ -105,8 +105,20 @@ function App() {
         videoMetadata={videoMetadata}
         selectedReference={referenceLap}
         selectedComparison={comparisonLap}
-        onSelectReference={(video, lap) => setReferenceLap({ video, lap })}
-        onSelectComparison={(video, lap) => setComparisonLap({ video, lap })}
+        onSelectReference={(video, lap) => {
+          if (referenceLap?.video === video && referenceLap?.lap === lap) {
+            setReferenceLap(null);
+          } else {
+            setReferenceLap({ video, lap });
+          }
+        }}
+        onSelectComparison={(video, lap) => {
+          if (comparisonLap?.video === video && comparisonLap?.lap === lap) {
+            setComparisonLap(null);
+          } else {
+            setComparisonLap({ video, lap });
+          }
+        }}
         onExpandVideo={handleExpandVideo}
         onUpload={handleUpload}
         isOpen={isSidebarOpen}
@@ -154,7 +166,7 @@ function App() {
                   <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
                 </div>
               ) : (
-                <TelemetryCharts 
+                <TelemetryChartsECharts 
                   referenceData={referenceData} 
                   comparisonData={comparisonData.length > 0 ? comparisonData : undefined} 
                 />
