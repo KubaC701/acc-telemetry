@@ -1,3 +1,13 @@
+---
+title: ACC Telemetry Extractor
+emoji: 🏎️
+colorFrom: red
+colorTo: gray
+sdk: docker
+pinned: false
+app_port: 7860
+---
+
 # ACC Telemetry Extractor (Console Edition)
 
 Extract detailed telemetry data from Assetto Corsa Competizione gameplay videos using computer vision. Designed for **console players (PS5/Xbox)** who can't access native telemetry export.
