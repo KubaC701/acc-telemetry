@@ -121,6 +121,9 @@ class VideoProcessingService:
             # Process frames
             if progress_callback:
                 progress_callback(20, "Processing frames and extracting telemetry...")
+            
+            total_frames = video_info['frame_count']
+            print(f"Starting frame processing loop for {total_frames} frames...")
 
             telemetry_data = []
             previous_lap = None
@@ -128,8 +131,9 @@ class VideoProcessingService:
             completed_lap_times = {}
             frames_since_transition = 0
 
-            total_frames = video_info['frame_count']
             last_progress_pct = 20
+
+            print(f"Starting frame processing loop for {total_frames} frames...")
 
             for frame_num, timestamp, roi_dict in processor.process_frames():
                 # Extract telemetry
@@ -189,11 +193,11 @@ class VideoProcessingService:
 
                 previous_lap = lap_number
 
-                # Progress update (every 10%)
+                # Progress update (every 5%)
                 current_progress_pct = 20 + int((frame_num / total_frames) * 60)
-                if current_progress_pct > last_progress_pct and current_progress_pct % 10 == 0:
+                if current_progress_pct > last_progress_pct and current_progress_pct % 5 == 0:
                     if progress_callback:
-                        progress_callback(current_progress_pct, f"Processing frames: {frame_num}/{total_frames}")
+                        progress_callback(current_progress_pct, f"Processing frames: {frame_num}/{total_frames} ({int(frame_num/total_frames*100)}%)")
                     last_progress_pct = current_progress_pct
 
             # Finalize lap detection

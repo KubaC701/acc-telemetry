@@ -91,15 +91,46 @@ class LapDetector:
         self._tesserocr_api = None
         if USE_TESSEROCR:
             try:
-                self._tesserocr_api = tesserocr.PyTessBaseAPI(
-                    path='/opt/homebrew/share/tessdata/',
-                    psm=tesserocr.PSM.SINGLE_WORD,
-                    oem=tesserocr.OEM.LSTM_ONLY
-                )
+                # Try common paths for tessdata
+                tessdata_paths = [
+                    '/opt/homebrew/share/tessdata/',  # macOS Homebrew
+                    '/usr/share/tesseract-ocr/4.00/tessdata/',  # Linux/Docker (older)
+                    '/usr/share/tesseract-ocr/5/tessdata/',  # Linux/Docker (newer)
+                    '/usr/share/tesseract-ocr/tessdata/',  # Linux generic
+                    '/usr/share/tessdata/',  # Linux alternative
+                ]
+                
+                tessdata_path = None
+                print(f"🔍 Searching for tessdata in: {tessdata_paths}")
+                for path in tessdata_paths:
+                    if Path(path).exists():
+                        tessdata_path = path
+                        print(f"✅ Found tessdata at: {path}")
+                        break
+                
+                if tessdata_path:
+                    print(f"DEBUG: Initializing PyTessBaseAPI with path: {tessdata_path}")
+                    self._tesserocr_api = tesserocr.PyTessBaseAPI(
+                        path=tessdata_path,
+                        psm=tesserocr.PSM.SINGLE_WORD,
+                        oem=tesserocr.OEM.LSTM_ONLY
+                    )
+                    print("DEBUG: PyTessBaseAPI initialized successfully")
+                else:
+                    # Let tesserocr find it (default behavior)
+                    print("DEBUG: Initializing PyTessBaseAPI with default path")
+                    self._tesserocr_api = tesserocr.PyTessBaseAPI(
+                        psm=tesserocr.PSM.SINGLE_WORD,
+                        oem=tesserocr.OEM.LSTM_ONLY
+                    )
+                    print("DEBUG: PyTessBaseAPI initialized successfully (default)")
+                    
                 self._tesserocr_api.SetVariable("tessedit_char_whitelist", "0123456789")
                 print("✅ Using tesserocr (fast C++ API, ~2ms per frame)")
             except Exception as e:
                 print(f"⚠️  tesserocr init failed: {e}, falling back to pytesseract")
+                import traceback
+                traceback.print_exc()
                 self._tesserocr_api = None
         else:
             print("ℹ️  Using pytesseract (~50ms per frame). Install tesserocr for 25x speedup!")

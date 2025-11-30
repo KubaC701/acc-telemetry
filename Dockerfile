@@ -1,6 +1,11 @@
 # Use Python 3.12 slim image
 FROM python:3.12-slim
 
+# Ensure Python output is sent straight to terminal (e.g. your container logs)
+# without being first buffered and that you can see the output of your application (e.g. django logs)
+# in real time.
+ENV PYTHONUNBUFFERED=1
+
 # Set working directory
 WORKDIR /app
 
