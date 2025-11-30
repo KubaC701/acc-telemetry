@@ -29,3 +29,5 @@ Thumbs.db
 
 
 debug/
+.vercel
+.env*.local
