@@ -1,5 +1,5 @@
-# Use Python 3.10 slim image
-FROM python:3.14-slim
+# Use Python 3.12 slim image
+FROM python:3.12-slim
 
 # Set working directory
 WORKDIR /app
@@ -8,15 +8,7 @@ WORKDIR /app
 # tesseract-ocr: for OCR
 # libgl1: for OpenCV
 # ffmpeg: for video processing
-RUN apt-get update && apt-get install -y \
-    tesseract-ocr \
-    libtesseract-dev \
-    libleptonica-dev \
-    pkg-config \
-    libgl1 \
-    ffmpeg \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y
 
 # Copy requirements first to leverage cache
 COPY requirements.txt .
