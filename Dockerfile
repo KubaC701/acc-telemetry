@@ -1,5 +1,5 @@
 # Use Python 3.10 slim image
-FROM python:3.10-slim
+FROM python:3.14-slim
 
 # Set working directory
 WORKDIR /app
@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     libgl1 \
     ffmpeg \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first to leverage cache
