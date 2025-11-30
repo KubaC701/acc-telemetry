@@ -8,7 +8,11 @@ WORKDIR /app
 # tesseract-ocr: for OCR
 # libgl1: for OpenCV
 # ffmpeg: for video processing
-RUN apt-get update && apt-get install -y
+RUN apt-get update && apt-get install -y \
+    tesseract-ocr \
+    libgl1 \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first to leverage cache
 COPY requirements.txt .
